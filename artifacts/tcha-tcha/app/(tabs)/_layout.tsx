@@ -13,7 +13,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
   const isGerant = user?.role === "gerant";
 
   const agentRoutes = ["index", "transactions", "fab", "rapport", "profile"];
-  const gerantRoutes = ["index", "transactions", "fab", "equipe", "rapport"];
+  const gerantRoutes = ["index", "equipe", "fab", "rapport", "profile"];
   const routes = isGerant ? gerantRoutes : agentRoutes;
 
   const labels: Record<string, string> = {
@@ -36,7 +36,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 
   return (
     <View style={[styles.tabBar, { paddingBottom: bottomPad }]}>
-      {routes.map((routeName, i) => {
+      {routes.map((routeName) => {
         if (routeName === "fab") {
           return (
             <TouchableOpacity key="fab" style={styles.fabWrap} onPress={() => router.push("/new-transaction")} activeOpacity={0.85}>

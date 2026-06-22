@@ -29,6 +29,8 @@ function RootLayoutNav() {
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="new-transaction" options={{ presentation: "modal" }} />
+      <Stack.Screen name="ouvrir-journee" options={{ presentation: "modal" }} />
+      <Stack.Screen name="fermer-journee" options={{ presentation: "modal" }} />
       <Stack.Screen name="alerts" options={{ presentation: "modal" }} />
       <Stack.Screen name="abonnement" options={{ presentation: "modal" }} />
     </Stack>

@@ -1,6 +1,9 @@
-import { Plus, Users } from "lucide-react-native";
+import { Plus, Users, X } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
-import { Alert, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import {
+  Alert, KeyboardAvoidingView, Modal, Platform, ScrollView,
+  StyleSheet, Text, TextInput, TouchableOpacity, View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AgentCard } from "@/components/AgentCard";
 import { useAuth, User } from "@/context/AuthContext";
@@ -10,15 +13,60 @@ import { useColors } from "@/hooks/useColors";
 export default function Equipe() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { getAgents } = useAuth();
-  const { transactions, getBalance, getTodayStats } = useTransactions();
+  const { user, getMyAgents, addAgentByManager } = useAuth();
+  const { transactions, getBalance } = useTransactions();
   const [agents, setAgents] = useState<User[]>([]);
+  const [showModal, setShowModal] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [pin, setPin] = useState("");
+  const [pinConfirm, setPinConfirm] = useState("");
+
+  const reload = () => getMyAgents().then(setAgents);
 
   useEffect(() => {
-    getAgents().then(setAgents);
+    reload();
   }, []);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  const totalTxToday = transactions.filter(
+    (t) => agents.some((a) => a.id === t.agentId) && t.createdAt.startsWith(todayStr)
+  ).length;
+
+  const resetForm = () => {
+    setFirstName(""); setLastName(""); setPhone(""); setPin(""); setPinConfirm("");
+  };
+
+  const handleAdd = async () => {
+    if (!firstName.trim()) { Alert.alert("Erreur", "Saisissez le prénom."); return; }
+    if (!lastName.trim()) { Alert.alert("Erreur", "Saisissez le nom."); return; }
+    if (!phone.trim() || phone.length < 8) { Alert.alert("Erreur", "Numéro de téléphone invalide."); return; }
+    if (pin.length < 4) { Alert.alert("Erreur", "Le PIN doit contenir au moins 4 chiffres."); return; }
+    if (pin !== pinConfirm) { Alert.alert("Erreur", "Les codes PIN ne correspondent pas."); return; }
+
+    setLoading(true);
+    const result = await addAgentByManager({
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      phone: `+229${phone.trim()}`,
+      pin,
+    });
+    setLoading(false);
+
+    if (result.success) {
+      setShowModal(false);
+      resetForm();
+      await reload();
+    } else {
+      Alert.alert("Erreur", result.error ?? "Impossible d'ajouter l'agent.");
+    }
+  };
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.surface }} contentContainerStyle={{ paddingBottom: 120 }}>
@@ -26,33 +74,23 @@ export default function Equipe() {
         <Text style={[styles.heading, { color: colors.primary }]}>Mon équipe</Text>
         <TouchableOpacity
           style={[styles.addBtn, { backgroundColor: colors.primary }]}
-          onPress={() => {
-            Alert.prompt(
-              "Inviter un agent",
-              "Entrez le numéro de téléphone de l'agent à inviter.",
-              (text) => {
-                if (text) Alert.alert("Invitation envoyée", `Un SMS d'invitation a été envoyé au +229${text}.`);
-              },
-              "plain-text",
-              "",
-              "number-pad"
-            );
-          }}
+          onPress={() => setShowModal(true)}
         >
           <Plus size={18} color={colors.accent} />
-          <Text style={[styles.addBtnText, { color: colors.accent }]}>Inviter</Text>
+          <Text style={[styles.addBtnText, { color: colors.accent }]}>Ajouter</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.body}>
+        {/* Stats */}
         <View style={[styles.statsCard, { backgroundColor: colors.primary }]}>
           <View style={styles.statItem}>
-            <Text style={styles.statVal}>{agents.length || 3}</Text>
-            <Text style={styles.statLabel}>Agents actifs</Text>
+            <Text style={styles.statVal}>{agents.length}</Text>
+            <Text style={styles.statLabel}>Agents</Text>
           </View>
-          <View style={[styles.divider]} />
+          <View style={styles.divider} />
           <View style={styles.statItem}>
-            <Text style={styles.statVal}>{transactions.length}</Text>
+            <Text style={styles.statVal}>{totalTxToday}</Text>
             <Text style={styles.statLabel}>Tx aujourd'hui</Text>
           </View>
         </View>
@@ -60,22 +98,98 @@ export default function Equipe() {
         <Text style={[styles.sectionTitle, { color: colors.primary }]}>Liste des agents</Text>
 
         {agents.length === 0 ? (
-          <>
-            {/* Demo agents */}
-            {[
-              { id: "d1", firstName: "Kouassi", lastName: "Koffi", phone: "+22960000001", role: "agent" as const, pin: "000000", createdAt: "", subscriptionExpiry: "" },
-              { id: "d2", firstName: "Aminata", lastName: "Traoré", phone: "+22960000002", role: "agent" as const, pin: "000000", createdAt: "", subscriptionExpiry: "" },
-              { id: "d3", firstName: "Ibrahim", lastName: "Diallo", phone: "+22960000003", role: "agent" as const, pin: "000000", createdAt: "", subscriptionExpiry: "" },
-            ].map((a) => (
-              <AgentCard key={a.id} agent={a} txCount={Math.floor(Math.random() * 20)} balance={200000 + Math.random() * 300000} />
-            ))}
-          </>
+          <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Users size={40} color={colors.muted} />
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>Aucun agent</Text>
+            <Text style={[styles.emptyText, { color: colors.muted }]}>
+              Appuyez sur « Ajouter » pour enregistrer votre premier agent.
+            </Text>
+          </View>
         ) : (
           agents.map((a) => (
-            <AgentCard key={a.id} agent={a} txCount={transactions.filter((t) => t.agentId === a.id).length} balance={getBalance(a.id)} />
+            <AgentCard
+              key={a.id}
+              agent={a}
+              txCount={transactions.filter((t) => t.agentId === a.id && t.createdAt.startsWith(todayStr)).length}
+              balance={getBalance(a.id)}
+            />
           ))
         )}
       </View>
+
+      {/* Add Agent Modal */}
+      <Modal visible={showModal} transparent animationType="slide" onRequestClose={() => setShowModal(false)}>
+        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setShowModal(false)} />
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[styles.sheet, { backgroundColor: colors.background, paddingBottom: (Platform.OS === "web" ? 20 : insets.bottom) + 20 }]}>
+            <View style={[{ width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: "center", marginBottom: 16 }]} />
+            <View style={styles.sheetHeader}>
+              <Text style={[styles.sheetTitle, { color: colors.primary }]}>Nouvel agent</Text>
+              <TouchableOpacity onPress={() => { setShowModal(false); resetForm(); }}>
+                <X size={22} color={colors.muted} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.formRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.label, { color: colors.muted }]}>PRÉNOM</Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+                  value={firstName} onChangeText={setFirstName} placeholder="Kofi" placeholderTextColor={colors.muted}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.label, { color: colors.muted }]}>NOM</Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+                  value={lastName} onChangeText={setLastName} placeholder="Atta" placeholderTextColor={colors.muted}
+                />
+              </View>
+            </View>
+
+            <View>
+              <Text style={[styles.label, { color: colors.muted }]}>TÉLÉPHONE</Text>
+              <View style={[styles.phoneRow, { backgroundColor: colors.input, borderColor: colors.border }]}>
+                <Text style={[styles.prefix, { color: colors.primary }]}>+229</Text>
+                <TextInput
+                  style={[styles.phoneInput, { color: colors.text }]}
+                  value={phone} onChangeText={(t) => setPhone(t.replace(/[^0-9]/g, ""))}
+                  keyboardType="number-pad" placeholder="XX XX XX XX" placeholderTextColor={colors.muted}
+                />
+              </View>
+            </View>
+
+            <View style={styles.formRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.label, { color: colors.muted }]}>CODE PIN</Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+                  value={pin} onChangeText={(t) => setPin(t.replace(/[^0-9]/g, ""))}
+                  keyboardType="number-pad" secureTextEntry placeholder="••••" placeholderTextColor={colors.muted} maxLength={6}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.label, { color: colors.muted }]}>CONFIRMER</Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+                  value={pinConfirm} onChangeText={(t) => setPinConfirm(t.replace(/[^0-9]/g, ""))}
+                  keyboardType="number-pad" secureTextEntry placeholder="••••" placeholderTextColor={colors.muted} maxLength={6}
+                />
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1 }]}
+              onPress={handleAdd}
+              disabled={loading}
+            >
+              <Text style={[styles.submitBtnText, { color: colors.accent }]}>
+                {loading ? "Enregistrement..." : "Enregistrer l'agent"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   );
 }
@@ -92,4 +206,19 @@ const styles = StyleSheet.create({
   statLabel: { color: "rgba(255,255,255,0.7)", fontSize: 12, fontFamily: "Poppins_400Regular", marginTop: 2 },
   divider: { width: 1, backgroundColor: "rgba(255,255,255,0.2)" },
   sectionTitle: { fontSize: 16, fontFamily: "Poppins_700Bold" },
+  empty: { borderRadius: 16, borderWidth: 1, padding: 32, alignItems: "center", gap: 12 },
+  emptyTitle: { fontSize: 16, fontFamily: "Poppins_700Bold" },
+  emptyText: { fontSize: 13, fontFamily: "Poppins_400Regular", textAlign: "center" },
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)" },
+  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, gap: 16 },
+  sheetHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  sheetTitle: { fontSize: 18, fontFamily: "Poppins_700Bold" },
+  formRow: { flexDirection: "row", gap: 12 },
+  label: { fontSize: 11, fontFamily: "Poppins_600SemiBold", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 },
+  input: { height: 50, borderRadius: 12, borderWidth: 1, paddingHorizontal: 14, fontSize: 14, fontFamily: "Poppins_400Regular" },
+  phoneRow: { flexDirection: "row", alignItems: "center", borderRadius: 12, borderWidth: 1, height: 50, paddingHorizontal: 14, gap: 8 },
+  prefix: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
+  phoneInput: { flex: 1, fontSize: 14, fontFamily: "Poppins_400Regular" },
+  submitBtn: { height: 52, borderRadius: 12, alignItems: "center", justifyContent: "center", marginTop: 4 },
+  submitBtnText: { fontSize: 15, fontFamily: "Poppins_700Bold" },
 });

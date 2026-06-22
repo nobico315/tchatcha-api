@@ -22,7 +22,8 @@ interface AuthContextType {
   register: (data: Omit<User, "id" | "createdAt" | "subscriptionExpiry">) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
-  getAgents: () => Promise<User[]>;
+  getMyAgents: () => Promise<User[]>;
+  addAgentByManager: (data: { firstName: string; lastName: string; phone: string; pin: string }) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -107,13 +108,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser((prev) => (prev ? { ...prev, ...updates } : prev));
   }, [user]);
 
-  const getAgents = useCallback(async (): Promise<User[]> => {
+  const getMyAgents = useCallback(async (): Promise<User[]> => {
+    if (!user || user.role !== "gerant") return [];
     const users = await getUsers();
-    return users.filter((u) => u.role === "agent" && (user?.role === "gerant"));
+    return users.filter((u) => u.role === "agent" && u.managerId === user.id);
+  }, [user]);
+
+  const addAgentByManager = useCallback(async (data: { firstName: string; lastName: string; phone: string; pin: string }) => {
+    if (!user || user.role !== "gerant") return { success: false, error: "Action non autorisée." };
+    const users = await getUsers();
+    if (users.find((u) => u.phone === data.phone)) {
+      return { success: false, error: "Ce numéro est déjà utilisé." };
+    }
+    const newAgent: User = {
+      id: generateId(),
+      firstName: data.firstName,
+      lastName: data.lastName,
+      phone: data.phone,
+      pin: data.pin,
+      role: "agent",
+      createdAt: new Date().toISOString(),
+      subscriptionExpiry: addDays(30),
+      managerId: user.id,
+    };
+    await saveUsers([...users, newAgent]);
+    return { success: true };
   }, [user]);
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout, updateUser, getAgents }}>
+    <AuthContext.Provider value={{ user, isLoading, login, register, logout, updateUser, getMyAgents, addAgentByManager }}>
       {children}
     </AuthContext.Provider>
   );
