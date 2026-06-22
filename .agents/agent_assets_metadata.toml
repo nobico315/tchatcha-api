@@ -1,0 +1,26 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "fN9Dak3aB7wyE-_gvtJo-"
+uri = "file://artifacts/tcha-tcha/assets/images/icon.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "5-lhFBf4pEdzNApqTU05n"
+uri = "file://artifacts/tcha-tcha/assets/images/onboarding1.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "hGdX3nkke8R_r1J0jMrw7"
+uri = "file://artifacts/tcha-tcha/assets/images/onboarding2.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "3ypIQB5NZgyI4uG6zEJ_g"
+uri = "file://artifacts/tcha-tcha/assets/images/onboarding3.png"
+type = "image"
+title = "generated_image"

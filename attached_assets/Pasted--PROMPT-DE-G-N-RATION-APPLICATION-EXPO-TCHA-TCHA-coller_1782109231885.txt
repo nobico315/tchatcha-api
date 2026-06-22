@@ -1,0 +1,250 @@
+# PROMPT DE GÉNÉRATION — APPLICATION EXPO TCHA-TCHA
+> À coller directement dans Bolt, Lovable ou Cursor pour générer l'app complète.
+
+---
+
+## CONTEXTE PRODUIT
+
+Construis une application mobile complète appelée **Tcha-Tcha** avec **React Native / Expo**. C'est un outil SaaS B2B offline-first destiné aux agents Mobile Money en Afrique de l'Ouest (zone UEMOA). L'app tourne sans internet et synchronise les données quand la connexion est disponible. Le prix est 1 000 FCFA/agent/mois.
+
+---
+
+## STACK TECHNIQUE
+
+- **Expo SDK** (dernière version stable) + **Expo Router** (file-based navigation)
+- **TypeScript** strict
+- **Supabase** (auth, base de données, realtime)
+- **Zustand** (état global)
+- **FedaPay** (paiement abonnement via WebView)
+- **expo-sqlite** ou **MMKV** pour le stockage offline
+- **react-native-reanimated** pour les animations
+- **@shopify/flash-list** pour les listes de transactions
+- **lucide-react-native** pour TOUS les icônes (pas de stickers, pas d'images décoratives — uniquement les icônes Lucide)
+- **react-native-chart-kit** pour les graphiques
+
+---
+
+## DESIGN SYSTEM
+
+### Couleurs
+```
+Primary:    #191970  (midnight blue)
+Accent:     #FFD700  (gold)
+Background: #FFFFFF  (blanc principal)
+Surface:    #F5F5FB  (fond léger)
+Text:       #111111  (texte principal)
+Muted:      #6B7280  (texte secondaire)
+Border:     #E8E8F5
+Success bg: #eafaf0 / text: #1a7a4a
+Danger bg:  #fdecea / text: #b00000
+```
+
+### Typographie
+- **Font unique : Poppins** (importer via expo-google-fonts)
+- Display : 28px Bold #191970
+- Heading : 18px Bold #191970
+- Body : 14px Regular #111111
+- Caption/Label : 12px SemiBold #6B7280, uppercase, letter-spacing 0.04em
+- Montant : 24px Bold — chiffre #191970, suffixe "FCFA" #FFD700
+
+### Règles composants
+- **Cartes** : bg blanc, border-radius 16px, border 1px #E8E8F5, ombre légère `elevation: 2`
+- **Bouton primaire** : bg #191970, texte #FFD700, Poppins Bold, border-radius 12px, height 52px, width 100%
+- **Bouton secondaire** : bg blanc, border 1.5px #191970, texte #191970, même radius/height
+- **Bouton ghost** : bg transparent, texte #191970, underline
+- **Inputs** : bg #F5F5FB, border 1px #E8E8F5, radius 12px, height 52px, Poppins 14px, label flottant au-dessus
+- **Badges** :
+  - Dépôt → bg #FFF8DC, texte #7a5c00
+  - Retrait → bg #eef0ff, texte #191970
+  - Actif → bg #eafaf0, texte #1a7a4a
+  - Inactif/Annulé → bg #fdecea, texte #b00000
+- **Transactions list item** : point coloré à gauche (D=vert, R=rouge), nom + heure, montant à droite
+- **Bottom tab bar** : bg blanc, bords supérieurs arrondis (border-radius 20px en haut), icône active #191970, inactive #6B7280, label Poppins Bold 11px, ombre légère
+- **FAB central** : bg #191970, icône `Plus` Lucide gold (#FFD700), elevated (shadow), circle 56px
+
+### Mobile-first
+- Tout est pensé pour mobile — aucun layout desktop
+- SafeAreaView sur tous les écrans
+- Bords arrondis généreux (12–20px) partout
+- Padding horizontal global : 20px
+
+---
+
+## PREMIER LANCEMENT — FLUX COMPLET
+
+### 1. Splash Screen
+- Fond : #191970 (plein écran)
+- Centre : logo Tcha-Tcha (texte stylisé Poppins Bold 36px #FFD700 + icône `Wallet` Lucide en gold)
+- Juste en dessous du logo : texte `AA dieu les cahiers` — Poppins SemiBold 13px, blanc, opacity 0.7, centré
+- Tout en bas (position absolute bottom 32px) : texte `Une solution MIDEESSI` — Poppins Regular 11px, blanc, opacity 0.5, centré
+- Animation : fade-in du logo (400ms), puis après 2.5s → transition vers Onboarding (si premier lancement) ou Login
+
+### 2. Onboarding (premier lancement uniquement — stocker dans AsyncStorage `onboarding_done`)
+- 3 slides plein écran
+- Chaque slide :
+  - **Image de fond** : image illustrative (utiliser une image locale placeholder ou unsplash) avec un **overlay blur** (`BlurView` expo-blur, intensity 60) + un dégradé semi-transparent `#191970` opacity 0.75 par-dessus
+  - Texte centré en bas (au-dessus des boutons) : titre Poppins Bold 24px blanc + description Poppins Regular 14px blanc opacity 0.85
+  - Indicateurs de slides (3 points) : actif = #FFD700, inactif = blanc opacity 0.4
+
+- **Slide 1** — Titre : `Gérez votre argent mobile.` / Description : `Enregistrez chaque dépôt et retrait en quelques secondes, même sans connexion internet.`
+- **Slide 2** — Titre : `Votre solde, toujours à jour.` / Description : `Suivez votre solde flottant en temps réel et recevez des alertes avant de tomber à court.`
+- **Slide 3** — Titre : `Des rapports clairs chaque jour.` / Description : `Consultez vos performances journalières et exportez vos rapports en un tap.`
+
+- **Boutons** (en bas, position fixe) :
+  - Bouton `Ignorer` : texte blanc opacity 0.7, Poppins Regular 13px, aligner à gauche
+  - Bouton `Suivant` : bouton primaire compact (bg #FFD700, texte #191970, Poppins Bold, border-radius 12px, padding 12px 28px) — sur le dernier slide devient `Commencer`
+  - Sur `Commencer` → marquer onboarding_done = true → naviguer vers Login
+
+### 3. Login Screen
+- Header : logo Tcha-Tcha compact centré en haut (Poppins Bold 24px #191970 + icône `Wallet` Lucide #191970)
+- Sous-titre : `Connexion à votre compte` — Poppins Regular 14px #6B7280
+- Champ : Numéro de téléphone (préfixe +229 Bénin avec flag, sélectionnable)
+- Champ : Code PIN (6 chiffres, input masqué avec 6 cercles visuels comme un keypad)
+- Bouton primaire : `Se connecter`
+- Lien : `Pas encore de compte ? Créer un compte` — centré, texte #191970 underline
+- Lien : `Code PIN oublié ?` — centré, texte #6B7280, 13px
+- **Aucun emoji, aucun sticker — icônes Lucide uniquement**
+
+---
+
+## INSCRIPTION
+
+### Register Screen
+- Titre : `Créer un compte` — Poppins Bold 24px #191970
+- Champs : Prénom et nom, Numéro de téléphone, Créer un PIN (6 chiffres), Confirmer le PIN
+- Sélecteur de rôle : 2 cards sélectionnables — `Agent` (icône `User` Lucide) et `Gérant` (icône `Users` Lucide) — card active : border 2px #191970, bg #eef0ff
+- Bouton : `Créer mon compte`
+- Lien : `Déjà un compte ? Se connecter`
+
+### Forgot PIN Screen
+- Numéro de téléphone → reçoit OTP SMS → saisie OTP 6 chiffres → nouveau PIN → confirmer PIN
+
+---
+
+## NAVIGATION POST-CONNEXION
+
+### Bottom Tab Bar (Mobile-first, bords arrondis en haut)
+- bg blanc, border-radius top-left 20px top-right 20px, shadow légère
+- Onglets **Agent** :
+  1. `Accueil` — icône `Home` Lucide
+  2. `Transactions` — icône `List` Lucide
+  3. **FAB central** `+` — circle bg #191970, icône `Plus` #FFD700, elevated — ouvre la page Nouvelle Transaction
+  4. `Rapport` — icône `BarChart2` Lucide
+  5. `Profil` — icône `User` Lucide
+- Onglets **Gérant** : remplace `Rapport` par `Équipe` (icône `Users`) et ajoute `Rapport` à la place de `Profil`, Profil reste dans le header
+
+---
+
+## ÉCRANS — RÔLE AGENT
+
+### Dashboard (Accueil)
+- SafeAreaView, bg #F5F5FB
+- **Header** : `Bonjour [Prénom] 👋` Poppins Bold 20px #191970 + date courte (Lundi 22 juin) en dessous Poppins 12px #6B7280 + icône `Bell` Lucide à droite (badge rouge si alertes)
+- **Balance card** : grande carte bg #191970, border-radius 20px, padding 24px
+  - Label `Solde flottant` Poppins 12px blanc opacity 0.7
+  - Montant `485 200 FCFA` — chiffre 28px Bold blanc, FCFA 16px #FFD700
+  - Sub `Mis à jour à 09:38` — 11px blanc opacity 0.5
+  - Icône `RefreshCw` Lucide blanc opacity 0.6 à droite pour forcer sync
+- **Quick actions** : grille 2×2, cards bg blanc border-radius 14px
+  - `Dépôt` (icône `ArrowDownCircle` Lucide #1a7a4a)
+  - `Retrait` (icône `ArrowUpCircle` Lucide #b00000)
+  - `Rapport` (icône `BarChart2` Lucide #191970)
+  - `Alertes` (icône `Bell` Lucide #191970)
+- **Section transactions récentes** :
+  - Titre `Transactions récentes` + lien `Voir tout` à droite
+  - 5 dernières transactions (FlashList) — point coloré, nom, heure, montant
+- **Sync status strip** : petite barre en bas de header — vert si synced, orange si pending, rouge si offline
+
+### Nouvelle Transaction Screen
+- Header : `Nouvelle transaction` + bouton `X` pour fermer
+- **Toggle Dépôt / Retrait** : 2 pills — active bg #191970 texte blanc, inactive bg #F5F5FB texte #6B7280
+- Champs : Nom du client, Numéro de téléphone, Montant FCFA (auto-format `50 000`), Opérateur (selector : MTN / Moov / Celtis — pills), Note (optionnel)
+- Bouton `Valider la transaction`
+- **Modal de confirmation** (BottomSheet) avant validation :
+  - Récap : type badge, montant en grand, client, opérateur, note
+  - 2 boutons : `Confirmer` (primaire) / `Modifier` (secondaire)
+- **Écran succès** : icône `CheckCircle` Lucide #1a7a4a (64px), montant, nom client, bouton `Nouvelle transaction` + lien `Voir l'historique`
+
+### Historique des Transactions
+- Barre de recherche (icône `Search` Lucide)
+- Filtres chips : `Tout` / `Dépôt` / `Retrait` + date picker
+- FlashList : point D/R coloré, nom, téléphone, opérateur, heure, montant
+- Tap → **Bottom sheet détail** : badge type, nom, téléphone, montant, opérateur, date/heure complète, note, bouton `Supprimer` (avec confirmation)
+
+### Rapport Journalier
+- Date picker (défaut aujourd'hui, navigation ← →)
+- **4 metric cards** (grille 2×2) :
+  - Total dépôts (bg #eafaf0, montant #1a7a4a)
+  - Total retraits (bg #fdecea, montant #b00000)
+  - Solde net (bg #eef0ff, montant #191970)
+  - Nb transactions (bg #F5F5FB, montant #111)
+- Graphique barres (react-native-chart-kit) : transactions par heure — barres #191970, fond blanc
+- Liste complète du jour
+- Bouton `Exporter PDF` (icône `Download` Lucide)
+
+### Alertes
+- Liste cards : icône Lucide + titre + description + heure
+- Types : solde bas (`AlertTriangle` #FFD700), abonnement expirant (`Clock` #b00000), sync OK (`CheckCircle` #1a7a4a)
+- Tap → marquer comme lu (opacity réduite)
+
+### Profil
+- Avatar cercle initiales bg #191970, texte #FFD700, 64px
+- Nom complet, téléphone, badge rôle
+- **Card abonnement** : `Abonnement actif` / `Expiré` — date d'expiration, bouton `Renouveler` → flow FedaPay
+- Sections : Modifier le profil, Changer le PIN, Notifications, À propos
+- Bouton `Se déconnecter` (icône `LogOut` Lucide, texte #b00000)
+
+---
+
+## ÉCRANS — RÔLE GÉRANT (en plus)
+
+### Dashboard Gérant
+- Même structure que Agent mais :
+  - Balance card : solde agrégé de tous les agents
+  - 3 stat cards supplémentaires : Agents actifs, Transactions aujourd'hui, Volume total
+  - Section `Mes agents` avec mini-cards (nom, nb transactions du jour, solde individuel)
+
+### Gestion des Agents
+- Liste agents : avatar initiales, nom, téléphone, dernière activité, badge Actif/Inactif
+- Tap → **Profil agent** : ses statistiques + son historique complet
+- FAB `+` → `Inviter un agent` (saisie numéro téléphone → SMS invitation)
+
+### Rapport Global
+- Filtre par agent (multi-select) + plage de dates
+- Graphiques agrégés + liste complète
+- Bouton `Exporter PDF`
+
+---
+
+## ABONNEMENT FEDAPAY
+
+### Écran Abonnement
+- Déclenché si abonnement expiré ou depuis Profil
+- Card plan : `1 000 FCFA / agent / mois`
+- Calcul dynamique : nb agents × 1 000 FCFA = total
+- Bouton `Payer maintenant` → ouvre FedaPay dans une WebView
+- Après paiement réussi : écran succès, abonnement renouvelé 30 jours
+
+---
+
+## OFFLINE-FIRST
+
+- Toutes les transactions sont d'abord enregistrées localement (expo-sqlite)
+- File d'attente de sync (queue) : chaque transaction a un statut `synced` / `pending` / `error`
+- Indicateur de sync dans le header : point vert = tout synced, orange = sync en attente, rouge = hors ligne
+- Sync automatique au retour de connexion (NetInfo listener)
+- Résolution de conflits : local gagne pour les nouvelles entrées, serveur gagne pour les suppressions
+
+---
+
+## NOTES IMPORTANTES
+
+- **Aucun sticker, aucune image décorative** — uniquement des icônes `lucide-react-native`
+- Tous les montants affichés sont formatés avec espaces : `50 000 FCFA`
+- Le PIN est toujours masqué, affiché comme 6 cercles
+- Les formulaires ont de la validation en temps réel (Zod ou validation manuelle)
+- Messages d'erreur en français, langage simple et direct
+- L'app est entièrement en **français**
+- Toutes les dates sont au format français (`Lundi 22 juin 2026`)
+- Le numéro de téléphone utilise le format Bénin (+229) par défaut, sélectionnable
+- L'app doit fonctionner sur iOS et Android

@@ -1,0 +1,136 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import NetInfo from "@react-native-community/netinfo";
+
+export type TransactionType = "depot" | "retrait";
+export type SyncStatus = "synced" | "pending" | "error";
+export type Operator = "MTN" | "Moov" | "Celtis";
+
+export interface Transaction {
+  id: string;
+  type: TransactionType;
+  clientName: string;
+  clientPhone: string;
+  amount: number;
+  operator: Operator;
+  note?: string;
+  syncStatus: SyncStatus;
+  agentId: string;
+  createdAt: string;
+}
+
+interface TransactionContextType {
+  transactions: Transaction[];
+  isOnline: boolean;
+  syncStatusGlobal: SyncStatus;
+  addTransaction: (data: Omit<Transaction, "id" | "syncStatus" | "createdAt">) => Promise<Transaction>;
+  deleteTransaction: (id: string) => Promise<void>;
+  getBalance: (agentId?: string) => number;
+  getTransactionsByDate: (date: string, agentId?: string) => Transaction[];
+  getTodayStats: (agentId?: string) => { depots: number; retraits: number; soldeNet: number; count: number };
+  refreshTransactions: () => Promise<void>;
+}
+
+const TransactionContext = createContext<TransactionContextType | null>(null);
+
+const TX_KEY = "@tcha_transactions";
+
+function generateId(): string {
+  return Date.now().toString() + Math.random().toString(36).substr(2, 9);
+}
+
+export function TransactionProvider({ children }: { children: React.ReactNode }) {
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [isOnline, setIsOnline] = useState(true);
+
+  const loadTransactions = async () => {
+    const json = await AsyncStorage.getItem(TX_KEY);
+    setTransactions(json ? JSON.parse(json) : []);
+  };
+
+  const saveTransactions = async (txs: Transaction[]) => {
+    await AsyncStorage.setItem(TX_KEY, JSON.stringify(txs));
+    setTransactions(txs);
+  };
+
+  useEffect(() => {
+    loadTransactions();
+    const unsub = NetInfo.addEventListener((state) => {
+      setIsOnline(!!state.isConnected);
+    });
+    return () => unsub();
+  }, []);
+
+  const syncStatusGlobal: SyncStatus = !isOnline
+    ? "error"
+    : transactions.some((t) => t.syncStatus === "pending")
+    ? "pending"
+    : "synced";
+
+  const addTransaction = useCallback(async (data: Omit<Transaction, "id" | "syncStatus" | "createdAt">) => {
+    const newTx: Transaction = {
+      ...data,
+      id: generateId(),
+      syncStatus: isOnline ? "synced" : "pending",
+      createdAt: new Date().toISOString(),
+    };
+    const stored = await AsyncStorage.getItem(TX_KEY);
+    const all: Transaction[] = stored ? JSON.parse(stored) : [];
+    const updated = [newTx, ...all];
+    await saveTransactions(updated);
+    return newTx;
+  }, [isOnline]);
+
+  const deleteTransaction = useCallback(async (id: string) => {
+    const stored = await AsyncStorage.getItem(TX_KEY);
+    const all: Transaction[] = stored ? JSON.parse(stored) : [];
+    await saveTransactions(all.filter((t) => t.id !== id));
+  }, []);
+
+  const getBalance = useCallback((agentId?: string) => {
+    const filtered = agentId ? transactions.filter((t) => t.agentId === agentId) : transactions;
+    return filtered.reduce((sum, t) => (t.type === "depot" ? sum + t.amount : sum - t.amount), 100000);
+  }, [transactions]);
+
+  const getTransactionsByDate = useCallback((date: string, agentId?: string) => {
+    return transactions.filter((t) => {
+      const txDate = new Date(t.createdAt).toDateString();
+      const filterDate = new Date(date).toDateString();
+      const matchDate = txDate === filterDate;
+      const matchAgent = agentId ? t.agentId === agentId : true;
+      return matchDate && matchAgent;
+    });
+  }, [transactions]);
+
+  const getTodayStats = useCallback((agentId?: string) => {
+    const today = getTransactionsByDate(new Date().toISOString(), agentId);
+    const depots = today.filter((t) => t.type === "depot").reduce((s, t) => s + t.amount, 0);
+    const retraits = today.filter((t) => t.type === "retrait").reduce((s, t) => s + t.amount, 0);
+    return { depots, retraits, soldeNet: depots - retraits, count: today.length };
+  }, [getTransactionsByDate]);
+
+  const refreshTransactions = useCallback(async () => {
+    if (isOnline) {
+      const stored = await AsyncStorage.getItem(TX_KEY);
+      const all: Transaction[] = stored ? JSON.parse(stored) : [];
+      const synced = all.map((t) => ({ ...t, syncStatus: "synced" as SyncStatus }));
+      await saveTransactions(synced);
+    }
+  }, [isOnline]);
+
+  return (
+    <TransactionContext.Provider value={{
+      transactions, isOnline, syncStatusGlobal,
+      addTransaction, deleteTransaction, getBalance,
+      getTransactionsByDate, getTodayStats, refreshTransactions,
+    }}>
+      {children}
+    </TransactionContext.Provider>
+  );
+}
+
+export function useTransactions() {
+  const ctx = useContext(TransactionContext);
+  if (!ctx) throw new Error("useTransactions must be used inside TransactionProvider");
+  return ctx;
+}
