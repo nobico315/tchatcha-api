@@ -18,7 +18,7 @@ export default function Dashboard() {
   const insets = useSafeAreaInsets();
   const { user, getMyAgents } = useAuth();
   const { transactions, syncStatusGlobal, getBalance, refreshTransactions, getTodaySession, getTodayStats } = useTransactions();
-  const { unreadCount } = useAlerts();
+  const { unreadCount, sendReminder } = useAlerts();
   const [refreshed, setRefreshed] = useState(new Date().toISOString());
   const [myAgents, setMyAgents] = useState<User[]>([]);
   const isGerant = user?.role === "gerant";
@@ -101,7 +101,7 @@ export default function Dashboard() {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.dayBannerTitle, { color: colors.successText }]}>Journée ouverte</Text>
                   <Text style={[styles.dayBannerSub, { color: colors.successText }]}>
-                    Fond de caisse : {formatAmount(todaySession.openingBalance)} FCFA
+                    Total de démarrage : {formatAmount(todaySession.openingTotal ?? todaySession.openingBalance ?? 0)} FCFA
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -151,6 +151,15 @@ export default function Dashboard() {
             <QuickActionItem label="Retrait" icon={<ArrowUpCircle size={28} color={colors.dangerText} />} onPress={() => router.push("/new-transaction")} />
             <QuickActionItem label="Rapport" icon={<BarChart2 size={28} color={colors.primary} />} onPress={() => router.push("/(tabs)/rapport")} />
             <QuickActionItem label="Alertes" icon={<AlertTriangle size={28} color={colors.primary} />} onPress={() => router.push("/alerts")} />
+            {isGerant && (
+              <QuickActionItem
+                label="Rappel"
+                icon={<Bell size={28} color={colors.primary} />}
+                onPress={async () => {
+                  await sendReminder("Démarrage de journée", "N'oubliez pas d'ouvrir la journée et d'indiquer votre fond de caisse.");
+                }}
+              />
+            )}
           </View>
         </View>
 
@@ -179,47 +188,49 @@ export default function Dashboard() {
 
 const styles = StyleSheet.create({
   bg: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingBottom: 12 },
+  header: { paddingHorizontal: 20, paddingBottom: 16 },
   headerInner: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  greeting: { fontSize: 20, fontFamily: "Poppins_700Bold" },
-  date: { fontSize: 12, fontFamily: "Poppins_400Regular", marginTop: 2 },
-  bellWrap: { position: "relative", padding: 4 },
+  greeting: { fontSize: 22, fontFamily: "Poppins_700Bold" },
+  date: { fontSize: 14, fontFamily: "Poppins_400Regular", marginTop: 4 },
+  bellWrap: { position: "relative", padding: 8, minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" },
   badge: {
-    position: "absolute", top: 0, right: 0,
-    width: 16, height: 16, borderRadius: 8,
+    position: "absolute", top: -2, right: -2,
+    width: 20, height: 20, borderRadius: 10,
     backgroundColor: "#b00000", alignItems: "center", justifyContent: "center",
   },
-  badgeText: { color: "#fff", fontSize: 9, fontFamily: "Poppins_700Bold" },
-  syncRow: { marginTop: 10 },
+  badgeText: { color: "#fff", fontSize: 10, fontFamily: "Poppins_700Bold" },
+  syncRow: { marginTop: 12 },
   dayBanner: {
     borderRadius: 16,
-    padding: 16,
+    padding: 18,
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
+    minHeight: 80,
   },
   dayBannerOpen: {
     borderRadius: 16,
-    padding: 16,
+    padding: 18,
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
     borderWidth: 1.5,
+    minHeight: 80,
   },
-  dayBannerTitle: { color: "#fff", fontSize: 15, fontFamily: "Poppins_700Bold" },
-  dayBannerSub: { color: "rgba(255,255,255,0.75)", fontSize: 12, fontFamily: "Poppins_400Regular", marginTop: 2 },
-  dayBannerBtn: { backgroundColor: "#FFD700", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
-  dayBannerBtnText: { color: "#191970", fontSize: 13, fontFamily: "Poppins_700Bold" },
-  closeDayBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
-  closeDayBtnText: { color: "#fff", fontSize: 13, fontFamily: "Poppins_700Bold" },
-  sectionTitle: { fontSize: 16, fontFamily: "Poppins_700Bold", marginBottom: 12 },
-  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  seeAll: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  dayBannerTitle: { color: "#fff", fontSize: 17, fontFamily: "Poppins_700Bold" },
+  dayBannerSub: { color: "rgba(255,255,255,0.75)", fontSize: 13, fontFamily: "Poppins_400Regular", marginTop: 4 },
+  dayBannerBtn: { backgroundColor: "#FFD700", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, minHeight: 44, justifyContent: "center" },
+  dayBannerBtnText: { color: "#191970", fontSize: 14, fontFamily: "Poppins_700Bold" },
+  closeDayBtn: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, minHeight: 44, justifyContent: "center" },
+  closeDayBtnText: { color: "#fff", fontSize: 14, fontFamily: "Poppins_700Bold" },
+  sectionTitle: { fontSize: 18, fontFamily: "Poppins_700Bold", marginBottom: 16 },
+  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 },
+  seeAll: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
+  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: 14, paddingBottom: 10 },
   statsRow: { flexDirection: "row", flexWrap: "wrap", gap: 12, paddingHorizontal: 20 },
-  statCard: { width: "47%", borderRadius: 14, borderWidth: 1, padding: 16, alignItems: "center" },
-  statVal: { fontSize: 18, fontFamily: "Poppins_700Bold" },
-  statLabel: { fontSize: 11, fontFamily: "Poppins_400Regular", textAlign: "center", marginTop: 2 },
+  statCard: { flex: 1, minWidth: "45%", borderRadius: 14, borderWidth: 1, padding: 18, alignItems: "center", minHeight: 100 },
+  statVal: { fontSize: 20, fontFamily: "Poppins_700Bold" },
+  statLabel: { fontSize: 12, fontFamily: "Poppins_400Regular", textAlign: "center", marginTop: 4 },
   empty: { padding: 24, borderRadius: 14, borderWidth: 1, alignItems: "center" },
   emptyText: { fontSize: 14, fontFamily: "Poppins_400Regular" },
 });

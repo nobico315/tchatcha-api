@@ -1,4 +1,5 @@
 import { Plus, Users, X } from "lucide-react-native";
+import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   Alert, KeyboardAvoidingView, Modal, Platform, ScrollView,
@@ -13,17 +14,19 @@ import { useColors } from "@/hooks/useColors";
 export default function Equipe() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user, getMyAgents, addAgentByManager } = useAuth();
+  const { user, getMyAgents, addAgentByManager, attachAgentByManager } = useAuth();
   const { transactions, getBalance } = useTransactions();
   const [agents, setAgents] = useState<User[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(false);
-
+  const [isAttachMode, setIsAttachMode] = useState(false);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [pin, setPin] = useState("");
   const [pinConfirm, setPinConfirm] = useState("");
+  const [attachPhone, setAttachPhone] = useState("");
+  const [attachPin, setAttachPin] = useState("");
 
   const reload = () => getMyAgents().then(setAgents);
 
@@ -41,6 +44,8 @@ export default function Equipe() {
 
   const resetForm = () => {
     setFirstName(""); setLastName(""); setPhone(""); setPin(""); setPinConfirm("");
+    setAttachPhone(""); setAttachPin("");
+    setIsAttachMode(false);
   };
 
   const handleAdd = async () => {
@@ -65,6 +70,24 @@ export default function Equipe() {
       await reload();
     } else {
       Alert.alert("Erreur", result.error ?? "Impossible d'ajouter l'agent.");
+    }
+  };
+
+  const handleAttach = async () => {
+    if (!attachPhone.trim() || attachPhone.length < 8) { Alert.alert("Erreur", "Numéro de téléphone invalide."); return; }
+    if (attachPin.length < 4) { Alert.alert("Erreur", "Le PIN doit contenir au moins 4 chiffres."); return; }
+
+    setLoading(true);
+    const result = await attachAgentByManager({ phone: `+229${attachPhone.trim()}`, pin: attachPin });
+    setLoading(false);
+
+    if (result.success) {
+      setShowModal(false);
+      resetForm();
+      await reload();
+      Alert.alert("Succès", "Agent existant rattaché.");
+    } else {
+      Alert.alert("Erreur", result.error ?? "Impossible de rattacher cet agent.");
     }
   };
 
@@ -101,9 +124,7 @@ export default function Equipe() {
           <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Users size={40} color={colors.muted} />
             <Text style={[styles.emptyTitle, { color: colors.text }]}>Aucun agent</Text>
-            <Text style={[styles.emptyText, { color: colors.muted }]}>
-              Appuyez sur « Ajouter » pour enregistrer votre premier agent.
-            </Text>
+            <Text style={[styles.emptyText, { color: colors.muted }]}>Appuyez sur « Ajouter » pour enregistrer votre premier agent.</Text>
           </View>
         ) : (
           agents.map((a) => (
@@ -124,69 +145,128 @@ export default function Equipe() {
           <View style={[styles.sheet, { backgroundColor: colors.background, paddingBottom: (Platform.OS === "web" ? 20 : insets.bottom) + 20 }]}>
             <View style={[{ width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: "center", marginBottom: 16 }]} />
             <View style={styles.sheetHeader}>
-              <Text style={[styles.sheetTitle, { color: colors.primary }]}>Nouvel agent</Text>
+              <Text style={[styles.sheetTitle, { color: colors.primary }]}>Agent</Text>
               <TouchableOpacity onPress={() => { setShowModal(false); resetForm(); }}>
                 <X size={22} color={colors.muted} />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.formRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.label, { color: colors.muted }]}>PRÉNOM</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
-                  value={firstName} onChangeText={setFirstName} placeholder="Kofi" placeholderTextColor={colors.muted}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.label, { color: colors.muted }]}>NOM</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
-                  value={lastName} onChangeText={setLastName} placeholder="Atta" placeholderTextColor={colors.muted}
-                />
-              </View>
+            <View style={{ flexDirection: "row", gap: 10, justifyContent: "center" }}>
+              <TouchableOpacity
+                style={[styles.modeBtn, isAttachMode ? styles.modeBtnInactive : styles.modeBtnActive, { borderColor: colors.primary }]}
+                onPress={() => setIsAttachMode(false)}
+              >
+                <Text style={[styles.modeBtnText, { color: isAttachMode ? colors.muted : colors.primary }]}>Nouveau agent</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modeBtn, isAttachMode ? styles.modeBtnActive : styles.modeBtnInactive, { borderColor: colors.primary }]}
+                onPress={() => setIsAttachMode(true)}
+              >
+                <Text style={[styles.modeBtnText, { color: isAttachMode ? colors.primary : colors.muted }]}>Attacher agent</Text>
+              </TouchableOpacity>
             </View>
 
-            <View>
-              <Text style={[styles.label, { color: colors.muted }]}>TÉLÉPHONE</Text>
-              <View style={[styles.phoneRow, { backgroundColor: colors.input, borderColor: colors.border }]}>
-                <Text style={[styles.prefix, { color: colors.primary }]}>+229</Text>
-                <TextInput
-                  style={[styles.phoneInput, { color: colors.text }]}
-                  value={phone} onChangeText={(t) => setPhone(t.replace(/[^0-9]/g, ""))}
-                  keyboardType="number-pad" placeholder="XX XX XX XX" placeholderTextColor={colors.muted}
-                />
-              </View>
-            </View>
+            {isAttachMode ? (
+              <>
+                <View>
+                  <Text style={[styles.label, { color: colors.muted }]}>TÉLÉPHONE</Text>
+                  <View style={[styles.phoneRow, { backgroundColor: colors.input, borderColor: colors.border }]}> 
+                    <Text style={[styles.prefix, { color: colors.primary }]}>+229</Text>
+                    <TextInput
+                      style={[styles.phoneInput, { color: colors.text }]}
+                      value={attachPhone}
+                      onChangeText={(t) => setAttachPhone(t.replace(/[^0-9]/g, ""))}
+                      keyboardType="number-pad"
+                      placeholder="XX XX XX XX"
+                      placeholderTextColor={colors.muted}
+                    />
+                  </View>
+                </View>
+                <View>
+                  <Text style={[styles.label, { color: colors.muted }]}>CODE PIN</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+                    value={attachPin}
+                    onChangeText={(t) => setAttachPin(t.replace(/[^0-9]/g, ""))}
+                    keyboardType="number-pad"
+                    secureTextEntry
+                    placeholder="••••"
+                    placeholderTextColor={colors.muted}
+                    maxLength={6}
+                  />
+                </View>
+                <TouchableOpacity
+                  style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1 }]}
+                  onPress={handleAttach}
+                  disabled={loading}
+                >
+                  <Text style={[styles.submitBtnText, { color: colors.accent }]}>Rattacher un agent existant</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <View style={styles.formRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.label, { color: colors.muted }]}>PRÉNOM</Text>
+                    <TextInput
+                      style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+                      value={firstName} onChangeText={setFirstName} placeholder="Kofi" placeholderTextColor={colors.muted}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.label, { color: colors.muted }]}>NOM</Text>
+                    <TextInput
+                      style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+                      value={lastName} onChangeText={setLastName} placeholder="Atta" placeholderTextColor={colors.muted}
+                    />
+                  </View>
+                </View>
 
-            <View style={styles.formRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.label, { color: colors.muted }]}>CODE PIN</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
-                  value={pin} onChangeText={(t) => setPin(t.replace(/[^0-9]/g, ""))}
-                  keyboardType="number-pad" secureTextEntry placeholder="••••" placeholderTextColor={colors.muted} maxLength={6}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.label, { color: colors.muted }]}>CONFIRMER</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
-                  value={pinConfirm} onChangeText={(t) => setPinConfirm(t.replace(/[^0-9]/g, ""))}
-                  keyboardType="number-pad" secureTextEntry placeholder="••••" placeholderTextColor={colors.muted} maxLength={6}
-                />
-              </View>
-            </View>
+                <View>
+                  <Text style={[styles.label, { color: colors.muted }]}>TÉLÉPHONE</Text>
+                  <View style={[styles.phoneRow, { backgroundColor: colors.input, borderColor: colors.border }]}> 
+                    <Text style={[styles.prefix, { color: colors.primary }]}>+229</Text>
+                    <TextInput
+                      style={[styles.phoneInput, { color: colors.text }]}
+                      value={phone}
+                      onChangeText={(t) => setPhone(t.replace(/[^0-9]/g, ""))}
+                      keyboardType="number-pad"
+                      placeholder="XX XX XX XX"
+                      placeholderTextColor={colors.muted}
+                    />
+                  </View>
+                </View>
 
-            <TouchableOpacity
-              style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1 }]}
-              onPress={handleAdd}
-              disabled={loading}
-            >
-              <Text style={[styles.submitBtnText, { color: colors.accent }]}>
-                {loading ? "Enregistrement..." : "Enregistrer l'agent"}
-              </Text>
-            </TouchableOpacity>
+                <View style={styles.formRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.label, { color: colors.muted }]}>CODE PIN</Text>
+                    <TextInput
+                      style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+                      value={pin} onChangeText={(t) => setPin(t.replace(/[^0-9]/g, ""))}
+                      keyboardType="number-pad" secureTextEntry placeholder="••••" placeholderTextColor={colors.muted} maxLength={6}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.label, { color: colors.muted }]}>CONFIRMER</Text>
+                    <TextInput
+                      style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+                      value={pinConfirm} onChangeText={(t) => setPinConfirm(t.replace(/[^0-9]/g, ""))}
+                      keyboardType="number-pad" secureTextEntry placeholder="••••" placeholderTextColor={colors.muted} maxLength={6}
+                    />
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1 }]}
+                  onPress={handleAdd}
+                  disabled={loading}
+                >
+                  <Text style={[styles.submitBtnText, { color: colors.accent }]}> 
+                    {loading ? "Enregistrement..." : "Enregistrer l'agent"}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -196,29 +276,33 @@ export default function Equipe() {
 
 const styles = StyleSheet.create({
   header: { paddingHorizontal: 20, paddingBottom: 16, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  heading: { fontSize: 22, fontFamily: "Poppins_700Bold" },
-  addBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
-  addBtnText: { fontSize: 13, fontFamily: "Poppins_700Bold" },
-  body: { padding: 20, gap: 20 },
-  statsCard: { borderRadius: 16, padding: 20, flexDirection: "row" },
+  heading: { fontSize: 24, fontFamily: "Poppins_700Bold" },
+  addBtn: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, minHeight: 44 },
+  addBtnText: { fontSize: 14, fontFamily: "Poppins_700Bold" },
+  body: { padding: 20, gap: 24 },
+  statsCard: { borderRadius: 16, padding: 24, flexDirection: "row" },
   statItem: { flex: 1, alignItems: "center" },
-  statVal: { color: "#FFD700", fontSize: 24, fontFamily: "Poppins_700Bold" },
-  statLabel: { color: "rgba(255,255,255,0.7)", fontSize: 12, fontFamily: "Poppins_400Regular", marginTop: 2 },
+  statVal: { color: "#FFD700", fontSize: 28, fontFamily: "Poppins_700Bold" },
+  statLabel: { color: "rgba(255,255,255,0.7)", fontSize: 13, fontFamily: "Poppins_400Regular", marginTop: 4 },
   divider: { width: 1, backgroundColor: "rgba(255,255,255,0.2)" },
-  sectionTitle: { fontSize: 16, fontFamily: "Poppins_700Bold" },
-  empty: { borderRadius: 16, borderWidth: 1, padding: 32, alignItems: "center", gap: 12 },
-  emptyTitle: { fontSize: 16, fontFamily: "Poppins_700Bold" },
-  emptyText: { fontSize: 13, fontFamily: "Poppins_400Regular", textAlign: "center" },
+  sectionTitle: { fontSize: 18, fontFamily: "Poppins_700Bold" },
+  empty: { borderRadius: 16, borderWidth: 1, padding: 36, alignItems: "center", gap: 14 },
+  emptyTitle: { fontSize: 17, fontFamily: "Poppins_700Bold" },
+  emptyText: { fontSize: 14, fontFamily: "Poppins_400Regular", textAlign: "center" },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)" },
-  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, gap: 16 },
+  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 18 },
   sheetHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  sheetTitle: { fontSize: 18, fontFamily: "Poppins_700Bold" },
-  formRow: { flexDirection: "row", gap: 12 },
-  label: { fontSize: 11, fontFamily: "Poppins_600SemiBold", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 },
-  input: { height: 50, borderRadius: 12, borderWidth: 1, paddingHorizontal: 14, fontSize: 14, fontFamily: "Poppins_400Regular" },
-  phoneRow: { flexDirection: "row", alignItems: "center", borderRadius: 12, borderWidth: 1, height: 50, paddingHorizontal: 14, gap: 8 },
-  prefix: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
-  phoneInput: { flex: 1, fontSize: 14, fontFamily: "Poppins_400Regular" },
-  submitBtn: { height: 52, borderRadius: 12, alignItems: "center", justifyContent: "center", marginTop: 4 },
-  submitBtnText: { fontSize: 15, fontFamily: "Poppins_700Bold" },
+  sheetTitle: { fontSize: 20, fontFamily: "Poppins_700Bold" },
+  formRow: { flexDirection: "row", gap: 14 },
+  label: { fontSize: 12, fontFamily: "Poppins_600SemiBold", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 },
+  input: { height: 56, borderRadius: 12, borderWidth: 1, paddingHorizontal: 16, fontSize: 15, fontFamily: "Poppins_400Regular" },
+  phoneRow: { flexDirection: "row", alignItems: "center", borderRadius: 12, borderWidth: 1, height: 56, paddingHorizontal: 16, gap: 10 },
+  prefix: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },
+  phoneInput: { flex: 1, fontSize: 15, fontFamily: "Poppins_400Regular" },
+  submitBtn: { height: 56, borderRadius: 12, alignItems: "center", justifyContent: "center", marginTop: 6 },
+  submitBtnText: { fontSize: 16, fontFamily: "Poppins_700Bold" },
+  modeBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1, minHeight: 44, justifyContent: "center", alignItems: "center" },
+  modeBtnActive: { backgroundColor: "transparent" },
+  modeBtnInactive: { backgroundColor: "transparent" },
+  modeBtnText: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
 });

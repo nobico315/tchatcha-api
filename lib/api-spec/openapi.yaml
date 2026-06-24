@@ -1,15 +1,24 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: API specification for Tcha-Tcha
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication operations
+  - name: agents
+    description: Team management operations
+  - name: sessions
+    description: Day session operations
+  - name: transactions
+    description: Transaction operations
+  - name: clients
+    description: Saved client operations
 paths:
   /healthz:
     get:
@@ -24,6 +33,276 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "200":
+          description: Registration response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout user
+      responses:
+        "200":
+          description: Logout success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                required: [success]
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current authenticated user
+      responses:
+        "200":
+          description: User info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "412":
+          description: Not authenticated
+  /agents:
+    get:
+      operationId: getAgents
+      tags: [agents]
+      summary: List agents for manager
+      responses:
+        "200":
+          description: List of agents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+  /agents/create:
+    post:
+      operationId: createAgent
+      tags: [agents]
+      summary: Create agent under manager
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentCreateRequest"
+      responses:
+        "200":
+          description: Success status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+  /agents/attach:
+    post:
+      operationId: attachAgent
+      tags: [agents]
+      summary: Attach existing agent to manager
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentAttachRequest"
+      responses:
+        "200":
+          description: Success status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+  /sessions/today:
+    get:
+      operationId: getTodaySession
+      tags: [sessions]
+      summary: Get current agent session for today
+      responses:
+        "200":
+          description: Current session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DaySession"
+        "404":
+          description: No session today
+  /sessions/open:
+    post:
+      operationId: openSession
+      tags: [sessions]
+      summary: Open day session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionOpenRequest"
+      responses:
+        "200":
+          description: Session opened
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DaySession"
+  /sessions/close:
+    post:
+      operationId: closeSession
+      tags: [sessions]
+      summary: Close day session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionCloseRequest"
+      responses:
+        "200":
+          description: Session closed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DaySession"
+  /transactions:
+    get:
+      operationId: getTransactions
+      tags: [transactions]
+      summary: List all transactions for agent or manager's agents
+      responses:
+        "200":
+          description: Transactions list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Transaction"
+    post:
+      operationId: createTransaction
+      tags: [transactions]
+      summary: Create or sync transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransactionCreateRequest"
+      responses:
+        "200":
+          description: Transaction created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+  /transactions/{id}:
+    put:
+      operationId: updateTransaction
+      tags: [transactions]
+      summary: Update a transaction
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransactionUpdateRequest"
+      responses:
+        "200":
+          description: Transaction updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+    delete:
+      operationId: deleteTransaction
+      tags: [transactions]
+      summary: Delete a transaction
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deletion success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                required: [success]
+  /transactions/logs:
+    get:
+      operationId: getTransactionLogs
+      tags: [transactions]
+      summary: Get logs of modifications
+      responses:
+        "200":
+          description: Log list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TransactionLog"
+  /clients/saved:
+    get:
+      operationId: getSavedClients
+      tags: [clients]
+      summary: List all saved clients
+      responses:
+        "200":
+          description: Client list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SavedClient"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +312,321 @@ components:
           type: string
       required:
         - status
-
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+          enum: [agent, gerant]
+        managerId:
+          type: string
+          nullable: true
+        subscriptionExpiry:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - firstName
+        - lastName
+        - phone
+        - role
+        - subscriptionExpiry
+        - createdAt
+    RegisterRequest:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        phone:
+          type: string
+        pin:
+          type: string
+        role:
+          type: string
+          enum: [agent, gerant]
+        managerId:
+          type: string
+      required:
+        - firstName
+        - lastName
+        - phone
+        - pin
+        - role
+    LoginRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+        pin:
+          type: string
+      required:
+        - phone
+        - pin
+    AuthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        token:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+        error:
+          type: string
+      required:
+        - success
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+    AgentCreateRequest:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        phone:
+          type: string
+        pin:
+          type: string
+      required:
+        - firstName
+        - lastName
+        - phone
+        - pin
+    AgentAttachRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+        pin:
+          type: string
+      required:
+        - phone
+        - pin
+    Balances:
+      type: object
+      properties:
+        cash:
+          type: integer
+        MTN:
+          type: integer
+        Moov:
+          type: integer
+        Celtis:
+          type: integer
+      required:
+        - cash
+        - MTN
+        - Moov
+        - Celtis
+    DaySession:
+      type: object
+      properties:
+        id:
+          type: string
+        agentId:
+          type: string
+        date:
+          type: string
+        openingBalances:
+          $ref: '#/components/schemas/Balances'
+        openingTotal:
+          type: integer
+        closingBalances:
+          $ref: '#/components/schemas/Balances'
+          nullable: true
+        closingTotal:
+          type: integer
+          nullable: true
+        isOpen:
+          type: boolean
+        openedAt:
+          type: string
+          format: date-time
+        closedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - agentId
+        - date
+        - openingBalances
+        - openingTotal
+        - isOpen
+        - openedAt
+    SessionOpenRequest:
+      type: object
+      properties:
+        balances:
+          $ref: '#/components/schemas/Balances'
+      required:
+        - balances
+    SessionCloseRequest:
+      type: object
+      properties:
+        closingCash:
+          type: integer
+      required:
+        - closingCash
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [depot, retrait, vente]
+        clientName:
+          type: string
+        clientPhone:
+          type: string
+        amount:
+          type: integer
+        operator:
+          type: string
+          enum: [MTN, Moov, Celtis]
+        note:
+          type: string
+          nullable: true
+        savedClient:
+          type: boolean
+        saleMode:
+          type: string
+          enum: [credit, forfait]
+          nullable: true
+        agentId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - type
+        - clientName
+        - clientPhone
+        - amount
+        - operator
+        - savedClient
+        - agentId
+        - createdAt
+    TransactionCreateRequest:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [depot, retrait, vente]
+        clientName:
+          type: string
+        clientPhone:
+          type: string
+        amount:
+          type: integer
+        operator:
+          type: string
+          enum: [MTN, Moov, Celtis]
+        note:
+          type: string
+        savedClient:
+          type: boolean
+        saleMode:
+          type: string
+          enum: [credit, forfait]
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - type
+        - clientName
+        - clientPhone
+        - amount
+        - operator
+        - savedClient
+        - createdAt
+    TransactionUpdateRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [depot, retrait, vente]
+        clientName:
+          type: string
+        clientPhone:
+          type: string
+        amount:
+          type: integer
+        operator:
+          type: string
+          enum: [MTN, Moov, Celtis]
+        note:
+          type: string
+        savedClient:
+          type: boolean
+        saleMode:
+          type: string
+          enum: [credit, forfait]
+    SavedClient:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        phone:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - phone
+        - createdAt
+    TransactionLog:
+      type: object
+      properties:
+        id:
+          type: string
+        transactionId:
+          type: string
+        action:
+          type: string
+          enum: [deleted, edited]
+        agentId:
+          type: string
+        userId:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        changes:
+          type: object
+          nullable: true
+      required:
+        - id
+        - transactionId
+        - action
+        - agentId
+        - userId
+        - timestamp

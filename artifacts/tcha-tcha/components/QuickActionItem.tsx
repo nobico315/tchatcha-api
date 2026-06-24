@@ -24,7 +24,7 @@ export function QuickActionItem({ label, icon, onPress }: QuickActionItemProps) 
 
 const styles = StyleSheet.create({
   card: {
-    flex: 1,
+    width: "48%",
     alignItems: "center",
     justifyContent: "center",
     padding: 18,

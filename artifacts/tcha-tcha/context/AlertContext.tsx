@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 
-export type AlertType = "balance" | "subscription" | "sync";
+export type AlertType = "balance" | "subscription" | "sync" | "reminder";
 
 export interface AppAlert {
   id: string;
@@ -17,6 +17,7 @@ interface AlertContextType {
   unreadCount: number;
   markAsRead: (id: string) => void;
   markAllRead: () => void;
+  sendReminder: (title: string, description: string) => Promise<void>;
 }
 
 const AlertContext = createContext<AlertContextType | null>(null);
@@ -73,10 +74,22 @@ export function AlertProvider({ children }: { children: React.ReactNode }) {
     save(alerts.map((a) => ({ ...a, read: true })));
   }, [alerts]);
 
+  const sendReminder = useCallback(async (title: string, description: string) => {
+    const next: AppAlert = {
+      id: Date.now().toString() + Math.random().toString(36).slice(2, 8),
+      type: "reminder",
+      title,
+      description,
+      read: false,
+      createdAt: new Date().toISOString(),
+    };
+    await save([next, ...alerts]);
+  }, [alerts]);
+
   const unreadCount = alerts.filter((a) => !a.read).length;
 
   return (
-    <AlertContext.Provider value={{ alerts, unreadCount, markAsRead, markAllRead }}>
+    <AlertContext.Provider value={{ alerts, unreadCount, markAsRead, markAllRead, sendReminder }}>
       {children}
     </AlertContext.Provider>
   );

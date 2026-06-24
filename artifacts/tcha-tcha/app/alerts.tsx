@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle, Clock } from "lucide-react-native";
+import { AlertTriangle, CheckCircle, Clock, Bell } from "lucide-react-native";
 import { router } from "expo-router";
 import React from "react";
 import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -11,6 +11,7 @@ const alertConfig = {
   balance: { Icon: AlertTriangle, color: "#7a5c00", bg: "#FFF8DC" },
   subscription: { Icon: Clock, color: "#b00000", bg: "#fdecea" },
   sync: { Icon: CheckCircle, color: "#1a7a4a", bg: "#eafaf0" },
+  reminder: { Icon: Bell, color: "#005b99", bg: "#e3f2fd" },
 };
 
 export default function Alerts() {

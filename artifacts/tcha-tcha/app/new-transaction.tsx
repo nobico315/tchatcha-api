@@ -1,10 +1,12 @@
 import { CheckCircle, X } from "lucide-react-native";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { Switch } from "react-native";
 import {
   Alert, KeyboardAvoidingView, Modal, Platform, ScrollView,
   StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
+import PhoneInput from "react-native-phone-number-input";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Badge } from "@/components/Badge";
 import { useAuth } from "@/context/AuthContext";
@@ -19,23 +21,31 @@ export default function NewTransaction() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { addTransaction } = useTransactions();
+  const { addTransaction, getSavedClientByPhone } = useTransactions();
 
   const [type, setType] = useState<TransactionType>("depot");
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
+  const [formattedClientPhone, setFormattedClientPhone] = useState("");
   const [amount, setAmount] = useState("");
   const [operator, setOperator] = useState<Operator>("MTN");
   const [note, setNote] = useState("");
+  const phoneInputRef = useRef<PhoneInput>(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [saveClient, setSaveClient] = useState(false);
+  const [saleMode, setSaleMode] = useState<"credit" | "forfait">("credit");
+  const [isNameAutoFilled, setIsNameAutoFilled] = useState(false);
 
   const numericAmount = parseInt(amount.replace(/\s/g, ""), 10) || 0;
 
   const validate = () => {
     if (!clientName) { Alert.alert("Erreur", "Saisissez le nom du client."); return false; }
-    if (!clientPhone) { Alert.alert("Erreur", "Saisissez le téléphone du client."); return false; }
+    if (!formattedClientPhone || !phoneInputRef.current?.isValidNumber(clientPhone)) {
+      Alert.alert("Erreur", "Saisissez un numéro de téléphone valide.");
+      return false;
+    }
     if (numericAmount < 100) { Alert.alert("Erreur", "Montant minimum : 100 FCFA."); return false; }
     return true;
   };
@@ -45,9 +55,11 @@ export default function NewTransaction() {
     await addTransaction({
       type,
       clientName,
-      clientPhone: `+229${clientPhone}`,
+      clientPhone: formattedClientPhone,
       amount: numericAmount,
       operator,
+      savedClient: saveClient,
+      saleMode: type === "vente" ? saleMode : undefined,
       note,
       agentId: user?.id ?? "",
     });
@@ -59,8 +71,20 @@ export default function NewTransaction() {
 
   const reset = () => {
     setClientName(""); setClientPhone(""); setAmount(""); setNote(""); setOperator("MTN");
+    setIsNameAutoFilled(false);
     setShowSuccess(false); setType("depot");
   };
+
+  useEffect(() => {
+    if (!formattedClientPhone) {
+      return;
+    }
+    const saved = getSavedClientByPhone(formattedClientPhone);
+    if (saved && !clientName) {
+      setClientName(saved.name);
+      setIsNameAutoFilled(true);
+    }
+  }, [formattedClientPhone, clientName, getSavedClientByPhone]);
 
   if (showSuccess) {
     return (
@@ -102,7 +126,11 @@ export default function NewTransaction() {
         <View style={styles.body}>
           {/* Type toggle */}
           <View style={[styles.toggle, { backgroundColor: colors.surface }]}>
-            {([["depot", "Dépôt"], ["retrait", "Retrait"]] as [TransactionType, string][]).map(([t, lbl]) => (
+            {([
+              ["depot", "Dépôt"],
+              ["retrait", "Retrait"],
+              ["vente", "Vente"],
+            ] as [TransactionType, string][]).map(([t, lbl]) => (
               <TouchableOpacity
                 key={t}
                 style={[styles.pill, type === t && { backgroundColor: colors.primary }]}
@@ -113,32 +141,61 @@ export default function NewTransaction() {
             ))}
           </View>
 
-          {/* Fields */}
-          {[
-            { label: "NOM DU CLIENT", value: clientName, onChange: setClientName, placeholder: "Ex: Kofi Atta" },
-          ].map((f) => (
-            <View key={f.label}>
-              <Text style={[styles.label, { color: colors.muted }]}>{f.label}</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text, fontFamily: "Poppins_400Regular" }]}
-                value={f.value} onChangeText={f.onChange} placeholder={f.placeholder} placeholderTextColor={colors.muted}
-              />
+          {type === "vente" && (
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+              <TouchableOpacity
+                style={[styles.smallPill, saleMode === "forfait" && { backgroundColor: colors.primary }]}
+                onPress={() => setSaleMode("forfait")}
+              >
+                <Text style={[styles.smallPillLabel, { color: saleMode === "forfait" ? "#fff" : colors.muted }]}>Forfait</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.smallPill, saleMode === "credit" && { backgroundColor: colors.primary }]}
+                onPress={() => setSaleMode("credit")}
+              >
+                <Text style={[styles.smallPillLabel, { color: saleMode === "credit" ? "#fff" : colors.muted }]}>Crédit</Text>
+              </TouchableOpacity>
             </View>
-          ))}
+          )}
+
+<View>
+            <Text style={[styles.label, { color: colors.muted }]}>NUMÉRO DE TÉLÉPHONE</Text>
+            <PhoneInput
+              ref={phoneInputRef}
+              value={clientPhone}
+              defaultCode="BJ"
+              layout="first"
+              onChangeText={(text) => setClientPhone(text)}
+              onChangeFormattedText={(text) => setFormattedClientPhone(text)}
+              withDarkTheme={false}
+              withShadow
+              autoFocus
+              disableArrowIcon={false}
+              placeholder="Numéro du client"
+              textInputProps={{ keyboardType: "phone-pad" }}
+              containerStyle={[styles.phoneContainer, { backgroundColor: colors.input, borderColor: colors.border }]}
+              textContainerStyle={[styles.phoneTextContainer, { backgroundColor: colors.input }]}
+              textInputStyle={[styles.phoneInput, { color: colors.text, fontFamily: "Poppins_400Regular" }]}
+              codeTextStyle={[styles.codeText, { color: colors.text }]}
+              countryPickerButtonStyle={[styles.countryButton, { backgroundColor: colors.input }]}
+              flagButtonStyle={styles.flagButton}
+            />
+          </View>
 
           <View>
-            <Text style={[styles.label, { color: colors.muted }]}>NUMÉRO DE TÉLÉPHONE</Text>
-            <View style={[styles.phoneRow, { backgroundColor: colors.input, borderColor: colors.border }]}>
-              <Text style={[styles.prefix, { color: colors.primary }]}>+229</Text>
-              <TextInput
-                style={[styles.phoneInput, { color: colors.text, fontFamily: "Poppins_400Regular" }]}
-                value={clientPhone}
-                onChangeText={(t) => setClientPhone(t.replace(/[^0-9]/g, ""))}
-                keyboardType="number-pad"
-                placeholder="XX XX XX XX"
-                placeholderTextColor={colors.muted}
-              />
-            </View>
+            <Text style={[styles.label, { color: colors.muted }]}>NOM DU CLIENT</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text, fontFamily: "Poppins_400Regular" }]}
+              value={clientName}
+              onChangeText={(text) => {
+                setClientName(text);
+                if (isNameAutoFilled) {
+                  setIsNameAutoFilled(false);
+                }
+              }}
+              placeholder="Ex: Kofi Atta"
+              placeholderTextColor={colors.muted}
+            />
           </View>
 
           <View>
@@ -183,6 +240,11 @@ export default function NewTransaction() {
             />
           </View>
 
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <Text style={[styles.label, { color: colors.muted, marginBottom: 0 }]}>Enregistrer le client</Text>
+            <Switch value={saveClient} onValueChange={setSaveClient} />
+          </View>
+
           <TouchableOpacity
             style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
             onPress={() => { if (validate()) setShowConfirm(true); }}
@@ -205,7 +267,7 @@ export default function NewTransaction() {
           </View>
           {[
             ["Client", clientName],
-            ["Téléphone", `+229${clientPhone}`],
+            ["Téléphone", formattedClientPhone || clientPhone],
             ["Opérateur", operator],
             ...(note ? [["Note", note]] : []),
           ].map(([k, v]) => (
@@ -235,11 +297,18 @@ const styles = StyleSheet.create({
   toggle: { flexDirection: "row", borderRadius: 12, padding: 4, gap: 4 },
   pill: { flex: 1, height: 44, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   pillLabel: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
+  smallPill: { height: 36, flex: 1, borderRadius: 8, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#ccc" },
+  smallPillLabel: { fontSize: 12, fontFamily: "Poppins_600SemiBold" },
   label: { fontSize: 12, fontFamily: "Poppins_600SemiBold", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 },
   input: { height: 52, borderRadius: 12, borderWidth: 1, paddingHorizontal: 16, fontSize: 14 },
   phoneRow: { flexDirection: "row", alignItems: "center", borderRadius: 12, borderWidth: 1, height: 52, paddingHorizontal: 16, gap: 8 },
   prefix: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
   phoneInput: { flex: 1, fontSize: 14, height: "100%" },
+  phoneContainer: { borderRadius: 12, borderWidth: 1, height: 52, overflow: "hidden" },
+  phoneTextContainer: { borderTopRightRadius: 12, borderBottomRightRadius: 12, backgroundColor: "transparent" },
+  codeText: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
+  countryButton: { width: 80, borderTopLeftRadius: 12, borderBottomLeftRadius: 12, overflow: "hidden" },
+  flagButton: { width: 80, justifyContent: "center", alignItems: "center" },
   operatorRow: { flexDirection: "row", gap: 10 },
   opPill: { flex: 1, height: 44, borderRadius: 10, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
   opLabel: { fontSize: 13, fontFamily: "Poppins_700Bold" },

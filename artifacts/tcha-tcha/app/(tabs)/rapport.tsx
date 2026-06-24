@@ -8,6 +8,7 @@ import { TransactionItem } from "@/components/TransactionItem";
 import { useAuth } from "@/context/AuthContext";
 import { useTransactions } from "@/context/TransactionContext";
 import { useColors } from "@/hooks/useColors";
+import { exportReportToPDF } from "@/utils/pdf";
 import { formatDate, formatShortDate, toISODate } from "@/utils/format";
 
 export default function Rapport() {
@@ -32,6 +33,29 @@ export default function Rapport() {
     const count = dayTx.filter((t) => new Date(t.createdAt).getHours() >= h && new Date(t.createdAt).getHours() < h + 2).length;
     return { label: `${h}h`, value: count };
   });
+
+  const handleExportPDF = async () => {
+    if (!user) {
+      Alert.alert("Erreur", "Utilisateur non identifié");
+      return;
+    }
+
+    await exportReportToPDF({
+      agentName: `${user.firstName} ${user.lastName}`,
+      date: date.toISOString(),
+      stats,
+      transactions: dayTx.map((tx) => ({
+        id: tx.id,
+        type: tx.type,
+        clientName: tx.clientName,
+        clientPhone: tx.clientPhone,
+        amount: tx.amount,
+        operator: tx.operator,
+        note: tx.note,
+        createdAt: tx.createdAt,
+      })),
+    });
+  };
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
@@ -92,7 +116,7 @@ export default function Rapport() {
         {/* Export */}
         <TouchableOpacity
           style={[styles.exportBtn, { borderColor: colors.primary }]}
-          onPress={() => Alert.alert("Export PDF", "La génération du rapport PDF n'est pas disponible hors ligne.")}
+          onPress={handleExportPDF}
         >
           <Download size={18} color={colors.primary} />
           <Text style={[styles.exportLabel, { color: colors.primary }]}>Exporter en PDF</Text>

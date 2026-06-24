@@ -122,8 +122,8 @@ export default function FermerJournee() {
 
           <View style={[styles.bilanCard, { backgroundColor: colors.primary }]}>
             <View style={styles.bilanRow}>
-              <Text style={styles.bilanLabel}>Fond d'ouverture</Text>
-              <Text style={styles.bilanValue}>{formatAmount(todaySession?.openingBalance ?? 0)} FCFA</Text>
+              <Text style={styles.bilanLabel}>Montant de démarrage</Text>
+              <Text style={styles.bilanValue}>{formatAmount(todaySession?.openingTotal ?? 0)} FCFA</Text>
             </View>
             <View style={[styles.sep, { backgroundColor: "rgba(255,255,255,0.15)" }]} />
             <View style={styles.bilanRow}>

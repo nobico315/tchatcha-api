@@ -4,7 +4,8 @@ import { TransactionType } from "@/context/TransactionContext";
 
 const typeConfig = {
   depot: { bg: "#FFF8DC", text: "#7a5c00", label: "Dépôt" },
-  retrait: { bg: "#eef0ff", text: "#191970", label: "Retrait" },
+  retrait: { bg: "eef0ff", text: "#191970", label: "Retrait" },
+  vente: { bg: "#fff4f0", text: "#9a3b00", label: "Vente" },
 };
 
 const statusConfig = {

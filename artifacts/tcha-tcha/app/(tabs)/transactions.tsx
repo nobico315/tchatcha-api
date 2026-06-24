@@ -18,10 +18,20 @@ export default function Transactions() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { transactions, deleteTransaction } = useTransactions();
+  const { transactions, deleteTransaction, updateTransaction, getTransactionLogs } = useTransactions();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [selected, setSelected] = useState<Transaction | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editClientName, setEditClientName] = useState("");
+  const [editClientPhone, setEditClientPhone] = useState("");
+  const [editAmount, setEditAmount] = useState("");
+  const [editOperator, setEditOperator] = useState<Transaction["operator"]>("MTN");
+  const [editNote, setEditNote] = useState("");
+
+  const logs = useMemo(() => {
+    return selected ? getTransactionLogs(selected.id) : [];
+  }, [selected, getTransactionLogs]);
 
   const filtered = useMemo(() => {
     return transactions.filter((t) => {
@@ -32,15 +42,48 @@ export default function Transactions() {
     });
   }, [transactions, filter, search]);
 
+  const closeSelected = () => {
+    setSelected(null);
+    setIsEditing(false);
+  };
+
   const handleDelete = () => {
     Alert.alert("Supprimer", "Voulez-vous vraiment supprimer cette transaction ?", [
       { text: "Annuler", style: "cancel" },
       {
         text: "Supprimer", style: "destructive", onPress: async () => {
-          if (selected) { await deleteTransaction(selected.id); setSelected(null); }
+          if (selected) { await deleteTransaction(selected.id); closeSelected(); }
         }
       },
     ]);
+  };
+
+  const startEdit = () => {
+    if (!selected) return;
+    setEditClientName(selected.clientName);
+    setEditClientPhone(selected.clientPhone);
+    setEditAmount(selected.amount.toString());
+    setEditOperator(selected.operator);
+    setEditNote(selected.note ?? "");
+    setIsEditing(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selected) return;
+    const amountValue = parseInt(editAmount.replace(/[^0-9]/g, ""), 10);
+    if (!editClientName || amountValue < 100 || !editClientPhone) {
+      Alert.alert("Erreur", "Veuillez vérifier le nom du client, le téléphone et le montant.");
+      return;
+    }
+    await updateTransaction(selected.id, {
+      clientName: editClientName,
+      clientPhone: editClientPhone,
+      amount: amountValue,
+      operator: editOperator,
+      note: editNote,
+    });
+    setIsEditing(false);
+    setSelected({ ...selected, clientName: editClientName, clientPhone: editClientPhone, amount: amountValue, operator: editOperator, note: editNote });
   };
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -84,14 +127,19 @@ export default function Transactions() {
       </ScrollView>
 
       {/* Detail Bottom Sheet */}
-      <Modal visible={!!selected} transparent animationType="slide" onRequestClose={() => setSelected(null)}>
-        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setSelected(null)} />
+      <Modal visible={!!selected && !isEditing} transparent animationType="slide" onRequestClose={closeSelected}>
+        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={closeSelected} />
         {selected && (
-          <View style={[styles.sheet, { backgroundColor: colors.background, paddingBottom: insets.bottom + 20 }]}>
+          <ScrollView
+            style={[styles.sheet, { backgroundColor: colors.background, paddingBottom: insets.bottom + 20 }]}
+            contentContainerStyle={styles.sheetContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
               <Badge type={selected.type} />
-              <TouchableOpacity onPress={() => setSelected(null)}>
+              <TouchableOpacity onPress={closeSelected}>
                 <X size={22} color={colors.muted} />
               </TouchableOpacity>
             </View>
@@ -114,10 +162,166 @@ export default function Transactions() {
                 <Text style={[styles.detailVal, { color: colors.text }]}>{v}</Text>
               </View>
             ))}
-            <TouchableOpacity style={[styles.deleteBtn, { borderColor: colors.dangerText }]} onPress={handleDelete}>
-              <Text style={[styles.deleteBtnText, { color: colors.dangerText }]}>Supprimer la transaction</Text>
-            </TouchableOpacity>
-          </View>
+            {!isEditing ? (
+              <>
+                <View style={styles.actionRow}>
+                  <TouchableOpacity style={[styles.secondaryBtn, { borderColor: colors.primary }]} onPress={startEdit}>
+                    <Text style={[styles.secondaryBtnText, { color: colors.primary }]}>Modifier</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.deleteBtn, { borderColor: colors.dangerText, flex: 1, marginLeft: 10 }]} onPress={handleDelete}>
+                    <Text style={[styles.deleteBtnText, { color: colors.dangerText }]}>Supprimer</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <View style={styles.editForm}>
+                <Text style={[styles.editLabel, { color: colors.muted }]}>Client</Text>
+                <TextInput
+                  style={[styles.editInput, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+                  value={editClientName}
+                  onChangeText={setEditClientName}
+                  placeholder="Nom du client"
+                  placeholderTextColor={colors.muted}
+                />
+                <Text style={[styles.editLabel, { color: colors.muted }]}>Téléphone</Text>
+                <TextInput
+                  style={[styles.editInput, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+                  value={editClientPhone}
+                  onChangeText={setEditClientPhone}
+                  placeholder="Téléphone"
+                  placeholderTextColor={colors.muted}
+                  keyboardType="phone-pad"
+                />
+                <Text style={[styles.editLabel, { color: colors.muted }]}>Montant</Text>
+                <TextInput
+                  style={[styles.editInput, { backgroundColor: colors.input, borderColor: colors.border, color: colors.primary }]}
+                  value={editAmount}
+                  onChangeText={(text) => setEditAmount(text.replace(/[^0-9]/g, ""))}
+                  keyboardType="number-pad"
+                  placeholder="Montant"
+                  placeholderTextColor={colors.muted}
+                />
+                <Text style={[styles.editLabel, { color: colors.muted }]}>Opérateur</Text>
+                <View style={styles.operatorRow}>
+                  {(["MTN", "Moov", "Celtis"] as Transaction["operator"][]).map((op) => (
+                    <TouchableOpacity
+                      key={op}
+                      style={[styles.opPill, { borderColor: editOperator === op ? colors.primary : colors.border, backgroundColor: editOperator === op ? "#eef0ff" : colors.card }]}
+                      onPress={() => setEditOperator(op)}
+                    >
+                      <Text style={[styles.opLabel, { color: editOperator === op ? colors.primary : colors.muted }]}>{op}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <Text style={[styles.editLabel, { color: colors.muted }]}>Note</Text>
+                <TextInput
+                  style={[styles.editInput, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+                  value={editNote}
+                  onChangeText={setEditNote}
+                  placeholder="Note (optionnel)"
+                  placeholderTextColor={colors.muted}
+                />
+                <View style={styles.actionRow}>
+                  <TouchableOpacity style={[styles.secondaryBtn, { borderColor: colors.primary }]} onPress={() => setIsEditing(false)}>
+                    <Text style={[styles.secondaryBtnText, { color: colors.primary }]}>Annuler</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: colors.primary, flex: 1, marginLeft: 10 }]} onPress={handleSaveEdit}>
+                    <Text style={[styles.primaryBtnText, { color: colors.accent }]}>Enregistrer</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+            {user?.role === "gerant" && logs.length > 0 && (
+              <View style={styles.historySection}>
+                <Text style={[styles.historyTitle, { color: colors.primary }]}>Historique</Text>
+                {logs.map((log) => (
+                  <View key={log.id} style={[styles.historyItem, { borderColor: colors.border }]}> 
+                    <Text style={[styles.historyAction, { color: colors.text }]}>Type : {log.action}</Text>
+                    <Text style={[styles.historyTime, { color: colors.muted }]}>{formatDate(log.timestamp)} {formatTime(log.timestamp)}</Text>
+                    {log.changes && Object.keys(log.changes).length > 0 && (
+                      <Text style={[styles.historyChange, { color: colors.muted }]}>{Object.entries(log.changes).map(([field, value]) => `${field}=${value}`).join(", ")}</Text>
+                    )}
+                  </View>
+                ))}
+              </View>
+            )}
+          </ScrollView>
+        )}
+      </Modal>
+
+      <Modal visible={!!selected && isEditing} transparent animationType="slide" onRequestClose={() => setIsEditing(false)}>
+        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setIsEditing(false)} />
+        {selected && (
+          <ScrollView
+            style={[styles.sheet, { backgroundColor: colors.background, paddingBottom: insets.bottom + 20 }]}
+            contentContainerStyle={styles.sheetContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.sheetHandle} />
+            <View style={[styles.sheetHeader, { justifyContent: "space-between" }]}> 
+              <Text style={[styles.sheetTitle, { color: colors.primary }]}>Modifier la transaction</Text>
+              <TouchableOpacity onPress={() => setIsEditing(false)}>
+                <X size={22} color={colors.muted} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.editForm}>
+              <Text style={[styles.editLabel, { color: colors.muted }]}>Client</Text>
+              <TextInput
+                style={[styles.editInput, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+                value={editClientName}
+                onChangeText={setEditClientName}
+                placeholder="Nom du client"
+                placeholderTextColor={colors.muted}
+              />
+              <Text style={[styles.editLabel, { color: colors.muted }]}>Téléphone</Text>
+              <TextInput
+                style={[styles.editInput, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+                value={editClientPhone}
+                onChangeText={setEditClientPhone}
+                placeholder="Téléphone"
+                placeholderTextColor={colors.muted}
+                keyboardType="phone-pad"
+              />
+              <Text style={[styles.editLabel, { color: colors.muted }]}>Montant</Text>
+              <TextInput
+                style={[styles.editInput, { backgroundColor: colors.input, borderColor: colors.border, color: colors.primary }]}
+                value={editAmount}
+                onChangeText={(text) => setEditAmount(text.replace(/[^0-9]/g, ""))}
+                keyboardType="number-pad"
+                placeholder="Montant"
+                placeholderTextColor={colors.muted}
+              />
+              <Text style={[styles.editLabel, { color: colors.muted }]}>Opérateur</Text>
+              <View style={styles.operatorRow}>
+                {(["MTN", "Moov", "Celtis"] as Transaction["operator"][]).map((op) => (
+                  <TouchableOpacity
+                    key={op}
+                    style={[styles.opPill, { borderColor: editOperator === op ? colors.primary : colors.border, backgroundColor: editOperator === op ? "#eef0ff" : colors.card }]}
+                    onPress={() => setEditOperator(op)}
+                  >
+                    <Text style={[styles.opLabel, { color: editOperator === op ? colors.primary : colors.muted }]}>{op}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={[styles.editLabel, { color: colors.muted }]}>Note</Text>
+              <TextInput
+                style={[styles.editInput, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+                value={editNote}
+                onChangeText={setEditNote}
+                placeholder="Note (optionnel)"
+                placeholderTextColor={colors.muted}
+              />
+              <View style={styles.actionRow}>
+                <TouchableOpacity style={[styles.secondaryBtn, { borderColor: colors.primary }]} onPress={() => setIsEditing(false)}>
+                  <Text style={[styles.secondaryBtnText, { color: colors.primary }]}>Annuler</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: colors.primary, flex: 1, marginLeft: 10 }]} onPress={handleSaveEdit}>
+                  <Text style={[styles.primaryBtnText, { color: colors.accent }]}>Enregistrer</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
         )}
       </Modal>
     </View>
@@ -146,6 +350,27 @@ const styles = StyleSheet.create({
   detailRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 10, borderBottomWidth: 1 },
   detailKey: { fontSize: 13, fontFamily: "Poppins_400Regular" },
   detailVal: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
-  deleteBtn: { borderWidth: 1.5, borderRadius: 12, height: 48, alignItems: "center", justifyContent: "center", marginTop: 8 },
+  detailBlock: { borderRadius: 16, backgroundColor: "rgba(0,0,0,0.02)", overflow: "hidden" },
+  sheetContent: { paddingBottom: 24, gap: 16 },
+  sectionTitle: { fontSize: 15, fontFamily: "Poppins_700Bold", marginBottom: 12 },
+  sheetTitle: { fontSize: 18, fontFamily: "Poppins_700Bold" },
+  operatorRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  opPill: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1 },
+  opLabel: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
+  editForm: { gap: 12 },
+  editLabel: { fontSize: 12, fontFamily: "Poppins_600SemiBold", textTransform: "uppercase", letterSpacing: 0.4 },
+  editInput: { width: "100%", borderRadius: 12, borderWidth: 1, padding: 12, fontSize: 14, fontFamily: "Poppins_400Regular" },
+  actionRow: { flexDirection: "row", gap: 10, marginTop: 12, alignItems: "center" },
+  primaryBtn: { flex: 1, height: 48, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  primaryBtnText: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
+  secondaryBtn: { flex: 1, height: 48, borderRadius: 12, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
+  secondaryBtnText: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
+  deleteBtn: { borderWidth: 1.5, borderRadius: 12, height: 48, alignItems: "center", justifyContent: "center", flex: 1 },
   deleteBtnText: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
+  historySection: { marginTop: 16 },
+  historyTitle: { fontSize: 15, fontFamily: "Poppins_700Bold", marginBottom: 8 },
+  historyItem: { borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 8 },
+  historyAction: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
+  historyTime: { fontSize: 12, fontFamily: "Poppins_400Regular", marginTop: 4 },
+  historyChange: { fontSize: 12, fontFamily: "Poppins_400Regular", marginTop: 4 },
 });
