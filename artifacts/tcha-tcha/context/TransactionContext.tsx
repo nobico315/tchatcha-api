@@ -333,9 +333,15 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
     txs.forEach((tx) => {
       const operator = tx.operator;
       if (tx.type === "depot") {
+        // Dépôt : L'agent reçoit du cash physique (+cash), et transfère de la monnaie électronique (-opérateur)
+        balances.cash += tx.amount;
+        balances[operator] -= tx.amount;
+      } else if (tx.type === "retrait") {
+        // Retrait : L'agent donne du cash physique (-cash), et reçoit de la monnaie électronique (+opérateur)
         balances.cash -= tx.amount;
         balances[operator] += tx.amount;
-      } else {
+      } else if (tx.type === "vente") {
+        // Vente de crédit/forfait : L'agent reçoit du cash (+cash), et déduit de la monnaie électronique (-opérateur)
         balances.cash += tx.amount;
         balances[operator] -= tx.amount;
       }

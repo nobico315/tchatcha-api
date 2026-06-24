@@ -1,5 +1,5 @@
 import { CheckCircle, X } from "lucide-react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import { Switch } from "react-native";
 import {
@@ -22,8 +22,9 @@ export default function NewTransaction() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { addTransaction, getSavedClientByPhone } = useTransactions();
+  const params = useLocalSearchParams<{ type?: TransactionType }>();
 
-  const [type, setType] = useState<TransactionType>("depot");
+  const [type, setType] = useState<TransactionType>(params.type || "depot");
   const [clientName, setClientName] = useState("");
   const [clientPhone, setClientPhone] = useState("");
   const [formattedClientPhone, setFormattedClientPhone] = useState("");

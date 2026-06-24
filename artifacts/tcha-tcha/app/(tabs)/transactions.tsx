@@ -104,7 +104,7 @@ export default function Transactions() {
           />
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersScroll}>
-          {([["all", "Tout"], ["depot", "Dépôt"], ["retrait", "Retrait"]] as [Filter, string][]).map(([f, lbl]) => (
+          {([["all", "Tout"], ["depot", "Dépôt"], ["retrait", "Retrait"], ["vente", "Vente"]] as [Filter, string][]).map(([f, lbl]) => (
             <TouchableOpacity
               key={f}
               style={[styles.chip, { backgroundColor: filter === f ? colors.primary : colors.card, borderColor: filter === f ? colors.primary : colors.border }]}
@@ -144,7 +144,7 @@ export default function Transactions() {
               </TouchableOpacity>
             </View>
             <View style={styles.amountRow}>
-              <Text style={[styles.detailAmount, { color: selected.type === "depot" ? colors.successText : colors.dangerText }]}>
+              <Text style={[styles.detailAmount, { color: (selected.type === "depot" || selected.type === "vente") ? colors.successText : colors.dangerText }]}>
                 {formatAmount(selected.amount)}
               </Text>
               <Text style={[styles.detailFcfa, { color: colors.accent }]}> FCFA</Text>

@@ -25,7 +25,13 @@ export default function Rapport() {
   };
 
   const dayTx = getTransactionsByDate(date.toISOString(), user?.id);
-  const stats = getTodayStats(user?.id);
+  
+  const stats = React.useMemo(() => {
+    const depots = dayTx.filter((t) => t.type === "depot").reduce((s, t) => s + t.amount, 0);
+    const retraits = dayTx.filter((t) => t.type === "retrait").reduce((s, t) => s + t.amount, 0);
+    const vente = dayTx.filter((t) => t.type === "vente").reduce((s, t) => s + t.amount, 0);
+    return { depots, retraits, vente, soldeNet: depots - retraits, count: dayTx.length };
+  }, [dayTx]);
 
   // Build hourly chart data
   const hours = Array.from({ length: 12 }, (_, i) => {

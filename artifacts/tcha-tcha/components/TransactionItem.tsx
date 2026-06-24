@@ -11,7 +11,7 @@ interface TransactionItemProps {
 
 export function TransactionItem({ item, onPress }: TransactionItemProps) {
   const colors = useColors();
-  const isDepot = item.type === "depot";
+  const isPositive = item.type === "depot" || item.type === "vente";
 
   return (
     <TouchableOpacity
@@ -19,7 +19,7 @@ export function TransactionItem({ item, onPress }: TransactionItemProps) {
       onPress={onPress}
       activeOpacity={0.7}
     >
-      <View style={[styles.dot, { backgroundColor: isDepot ? colors.successText : colors.dangerText }]} />
+      <View style={[styles.dot, { backgroundColor: isPositive ? colors.successText : colors.dangerText }]} />
       <View style={styles.info}>
         <Text style={[styles.name, { color: colors.text, fontFamily: "Poppins_600SemiBold" }]} numberOfLines={1}>
           {item.clientName}
@@ -29,8 +29,8 @@ export function TransactionItem({ item, onPress }: TransactionItemProps) {
         </Text>
       </View>
       <View style={styles.right}>
-        <Text style={[styles.amount, { color: isDepot ? colors.successText : colors.dangerText, fontFamily: "Poppins_700Bold" }]}>
-          {isDepot ? "+" : "-"}{formatAmount(item.amount)}
+        <Text style={[styles.amount, { color: isPositive ? colors.successText : colors.dangerText, fontFamily: "Poppins_700Bold" }]}>
+          {isPositive ? "+" : "-"}{formatAmount(item.amount)}
         </Text>
         <Text style={[styles.fcfa, { color: colors.accent, fontFamily: "Poppins_600SemiBold" }]}>FCFA</Text>
       </View>

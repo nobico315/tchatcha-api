@@ -147,8 +147,8 @@ export default function Dashboard() {
         <View style={{ paddingHorizontal: 20 }}>
           <Text style={[styles.sectionTitle, { color: colors.primary }]}>Actions rapides</Text>
           <View style={styles.grid}>
-            <QuickActionItem label="Dépôt" icon={<ArrowDownCircle size={28} color={colors.successText} />} onPress={() => router.push("/new-transaction")} />
-            <QuickActionItem label="Retrait" icon={<ArrowUpCircle size={28} color={colors.dangerText} />} onPress={() => router.push("/new-transaction")} />
+            <QuickActionItem label="Dépôt" icon={<ArrowDownCircle size={28} color={colors.successText} />} onPress={() => router.push("/new-transaction?type=depot")} />
+            <QuickActionItem label="Retrait" icon={<ArrowUpCircle size={28} color={colors.dangerText} />} onPress={() => router.push("/new-transaction?type=retrait")} />
             <QuickActionItem label="Rapport" icon={<BarChart2 size={28} color={colors.primary} />} onPress={() => router.push("/(tabs)/rapport")} />
             <QuickActionItem label="Alertes" icon={<AlertTriangle size={28} color={colors.primary} />} onPress={() => router.push("/alerts")} />
             {isGerant && (
