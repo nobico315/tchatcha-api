@@ -69,3 +69,42 @@ export const transactionLogsTable = pgTable("transaction_logs", {
   timestamp: timestamp("timestamp").defaultNow().notNull(),
   changes: jsonb("changes"),
 });
+
+// Products catalog table
+export const productsTable = pgTable("products", {
+  id: text("id").primaryKey(),
+  agentId: text("agent_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  barcode: text("barcode"),       // Optional barcode for scanner
+  price: integer("price").notNull(),
+  stock: integer("stock"),        // Optional stock tracking (null = unlimited/not tracked)
+  category: text("category"),     // Optional category
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Product sales table
+export const productSalesTable = pgTable("product_sales", {
+  id: text("id").primaryKey(),
+  agentId: text("agent_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  productId: text("product_id"),  // null for ad-hoc (no catalog product)
+  productName: text("product_name").notNull(),
+  unitPrice: integer("unit_price").notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  totalPrice: integer("total_price").notNull(),
+  barcode: text("barcode"),
+  note: text("note"),
+  createdAt: timestamp("created_at").notNull(),
+});
+
+// In-app notifications table
+export const notificationsTable = pgTable("notifications", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  type: text("type").notNull(), // 'agent_attached' | 'subscription_renewed' | 'manager_subscribed' | 'info'
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  isRead: boolean("is_read").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});

@@ -83,7 +83,7 @@ export default function FermerJournee() {
 
         <TouchableOpacity
           style={[styles.btn, { backgroundColor: colors.primary }]}
-          onPress={() => { router.replace("/(tabs)/rapport"); }}
+          onPress={() => { router.replace("/rapport"); }}
         >
           <Text style={[styles.btnText, { color: "#FFD700" }]}>Voir le rapport</Text>
         </TouchableOpacity>

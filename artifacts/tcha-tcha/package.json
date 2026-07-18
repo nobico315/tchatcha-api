@@ -4,13 +4,17 @@
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
-    "dev": "pnpm exec expo start --localhost --port $PORT",
+    "dev": "pnpm exec expo start --localhost --port 8083",
     "build": "node scripts/build.js",
     "serve": "node server/serve.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
+    "@babel/plugin-transform-class-properties": "^8.0.1",
+    "@babel/plugin-transform-private-methods": "^8.0.1",
     "@expo-google-fonts/inter": "^0.4.0",
     "@expo/cli": "54.0.23",
     "@expo/ngrok": "^4.1.0",
@@ -20,9 +24,11 @@
     "@tanstack/react-query": "catalog:",
     "@types/react": "~19.1.10",
     "@types/react-dom": "~19.1.7",
+    "@types/react-native": "^0.73.0",
     "@ungap/structured-clone": "^1.3.0",
     "@workspace/api-client-react": "workspace:*",
     "babel-plugin-react-compiler": "^19.0.0-beta-e993439-20250117",
+    "babel-preset-expo": "^54.0.12",
     "expo": "~54.0.27",
     "expo-blur": "~15.0.8",
     "expo-constants": "~18.0.11",
@@ -34,7 +40,7 @@
     "expo-linear-gradient": "~15.0.8",
     "expo-linking": "~8.0.10",
     "expo-location": "~19.0.8",
-    "expo-print": "~14.0.3",
+    "expo-print": "~15.0.8",
     "expo-router": "~6.0.17",
     "expo-sharing": "~14.0.3",
     "expo-splash-screen": "~31.0.12",
@@ -59,10 +65,15 @@
   },
   "dependencies": {
     "@expo-google-fonts/poppins": "^0.4.1",
-    "@react-native-community/netinfo": "^12.0.1",
-    "@shopify/flash-list": "^2.3.2",
+    "@react-native-community/netinfo": "^11.4.1",
+    "@shopify/flash-list": "^2.0.2",
+    "expo": "~54.0.35",
+    "expo-camera": "~17.0.10",
     "libphonenumber-js": "^1.13.7",
     "lucide-react-native": "^1.21.0",
-    "react-native-phone-number-input": "^2.1.0"
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-phone-number-input": "^2.1.0",
+    "react-sdk-feexpay": "^1.0.3"
   }
 }

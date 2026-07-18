@@ -1,6 +1,7 @@
 import { CheckCircle, CreditCard } from "lucide-react-native";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import * as WebBrowser from "expo-web-browser";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
@@ -10,29 +11,102 @@ import { formatAmount } from "@/utils/format";
 export default function Abonnement() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user, updateUser } = useAuth();
-  const [agents] = useState(1);
-  const total = agents * 1000;
+  const { user, getMyAgents, updateUser } = useAuth();
+  const [agentCount, setAgentCount] = useState(1);
+  const total = agentCount * 1000;
   const [paid, setPaid] = useState(false);
+  const [PaymentComponent, setPaymentComponent] = useState<React.ComponentType<any> | null>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const isWeb = Platform.OS === "web";
 
-  const handlePay = () => {
-    Alert.alert(
-      "Paiement FedaPay",
-      `Vous allez payer ${formatAmount(total)} FCFA via FedaPay. Continuer ?`,
-      [
-        { text: "Annuler", style: "cancel" },
-        {
-          text: "Payer",
-          onPress: async () => {
-            const newExpiry = new Date();
-            newExpiry.setDate(newExpiry.getDate() + 30);
-            await updateUser({ subscriptionExpiry: newExpiry.toISOString() });
-            setPaid(true);
-          },
-        },
-      ]
-    );
+  const feexpayToken = process.env.EXPO_PUBLIC_FEEXPAY_TOKEN ?? "";
+  const feexpayShopId = process.env.EXPO_PUBLIC_FEEXPAY_ID ?? "";
+  const feexpayMode = (process.env.EXPO_PUBLIC_FEEXPAY_MODE === "LIVE" ? "LIVE" : "SANDBOX") as "LIVE" | "SANDBOX";
+  const missingFeexpayConfig = !feexpayToken || !feexpayShopId;
+
+  useEffect(() => {
+    if (!isWeb || missingFeexpayConfig) return;
+
+    import("react-sdk-feexpay")
+      .then((module) => {
+        const Component = module.FeexPayButton ?? module.default;
+        if (!Component) {
+          throw new Error("FeexPayButton introuvable dans le module FeexPay");
+        }
+        setPaymentComponent(() => Component as React.ComponentType<any>);
+      })
+      .catch((err) => {
+        console.warn("FeexPay load error:", err);
+        setPaymentError("Impossible de charger le bouton de paiement FeexPay.");
+      });
+  }, [missingFeexpayConfig]);
+
+  const paymentReference = useMemo(
+    () => `ABON-${user?.id ?? "unknown"}-${Date.now()}`,
+    [user?.id]
+  );
+
+  const handlePaymentCallback = useCallback(
+    async (result: any) => {
+      console.log("FeexPay callback result", result);
+      const status = result?.status;
+
+      if (status === "SUCCESSFUL" || status === "SUCCESS") {
+        const newExpiry = new Date();
+        newExpiry.setDate(newExpiry.getDate() + 30);
+        await updateUser({ subscriptionExpiry: newExpiry.toISOString() });
+        setPaid(true);
+        return;
+      }
+
+      if (status) {
+        Alert.alert("Paiement échoué", "Le paiement n'a pas été confirmé. Veuillez réessayer.");
+      }
+    },
+    [updateUser]
+  );
+
+  useEffect(() => {
+    if (user?.role === "gerant") {
+      getMyAgents().then((agents) => setAgentCount(Math.max(1, agents.length)));
+    }
+  }, [user?.role]);
+
+  const handlePay = async () => {
+    if (missingFeexpayConfig) {
+      Alert.alert(
+        "Configuration manquante",
+        "Veuillez définir EXPO_PUBLIC_FEEXPAY_TOKEN et EXPO_PUBLIC_FEEXPAY_ID dans votre environnement Expo."
+      );
+      return;
+    }
+
+    const appDeepLink = "tcha-tcha://feexpay-callback";
+    const callbackUrl = isWeb
+      ? `${process.env.EXPO_PUBLIC_API_URL ?? ""}/api/feexpay/verify`
+      : appDeepLink;
+    const errorCallbackUrl = isWeb
+      ? `${process.env.EXPO_PUBLIC_API_URL ?? ""}/api/feexpay/verify?error=1`
+      : appDeepLink;
+
+    const checkoutUrl = `${process.env.EXPO_PUBLIC_API_URL ?? ""}/api/feexpay/checkout?reference=${encodeURIComponent(
+      paymentReference
+    )}&amount=${total}&mode=${feexpayMode}&token=${encodeURIComponent(feexpayToken)}&shopId=${encodeURIComponent(
+      feexpayShopId
+    )}&callback_url=${encodeURIComponent(callbackUrl)}&error_callback_url=${encodeURIComponent(errorCallbackUrl)}&callback_info=${encodeURIComponent(
+      JSON.stringify({ userId: user?.id, email: user?.phone ?? "" })
+    )}`;
+
+    if (isWeb) {
+      window.location.href = checkoutUrl;
+      return;
+    }
+
+    const result = await WebBrowser.openBrowserAsync(checkoutUrl);
+    if (result.type !== "opened") {
+      Alert.alert("Erreur de paiement", "Impossible d'ouvrir le flux de paiement FeexPay.");
+    }
   };
 
   if (paid) {
@@ -79,7 +153,7 @@ export default function Abonnement() {
           <Text style={[styles.summaryTitle, { color: colors.primary }]}>Récapitulatif</Text>
           <View style={[styles.summaryRow, { borderColor: colors.border }]}>
             <Text style={[styles.summaryKey, { color: colors.muted }]}>Nb agents</Text>
-            <Text style={[styles.summaryVal, { color: colors.text }]}>{agents}</Text>
+            <Text style={[styles.summaryVal, { color: colors.text }]}>{agentCount}</Text>
           </View>
           <View style={[styles.summaryRow, { borderColor: colors.border }]}>
             <Text style={[styles.summaryKey, { color: colors.muted }]}>Prix unitaire</Text>
@@ -94,10 +168,21 @@ export default function Abonnement() {
           </View>
         </View>
 
+        {paymentError ? (
+          <Text style={[styles.errorText, { color: colors.error }]}>{paymentError}</Text>
+        ) : null}
+
         <TouchableOpacity style={[styles.payBtn, { backgroundColor: colors.primary }]} onPress={handlePay}>
           <CreditCard size={20} color={colors.accent} />
-          <Text style={[styles.payBtnText, { color: colors.accent }]}>Payer maintenant via FedaPay</Text>
+          <Text style={[styles.payBtnText, { color: colors.accent }]}>Payer maintenant via FeexPay</Text>
         </TouchableOpacity>
+
+        {isWeb && missingFeexpayConfig ? (
+          <View style={[styles.warningBox, { borderColor: colors.border, backgroundColor: colors.surface }]}> 
+            <Text style={[styles.warningText, { color: colors.muted }]}>Veuillez configurer les variables Expo :</Text>
+            <Text style={[styles.warningText, { color: colors.text }]}>EXPO_PUBLIC_FEEXPAY_TOKEN et EXPO_PUBLIC_FEEXPAY_ID</Text>
+          </View>
+        ) : null}
       </View>
     </ScrollView>
   );
@@ -129,4 +214,7 @@ const styles = StyleSheet.create({
   successDesc: { fontSize: 14, fontFamily: "Poppins_400Regular", textAlign: "center" },
   primaryBtn: { height: 52, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   primaryBtnText: { fontSize: 15, fontFamily: "Poppins_700Bold" },
+  errorText: { fontSize: 14, fontFamily: "Poppins_600SemiBold", marginTop: 8, textAlign: "center" },
+  warningBox: { borderWidth: 1, borderRadius: 14, padding: 14, marginTop: 12 },
+  warningText: { fontSize: 13, fontFamily: "Poppins_400Regular", lineHeight: 20 },
 });

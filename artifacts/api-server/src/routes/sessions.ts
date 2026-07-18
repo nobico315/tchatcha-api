@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { daySessionsTable, transactionsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, gte, lt } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/authMiddleware";
 
 const router = Router();
@@ -70,7 +70,47 @@ router.post("/open", requireAuth, async (req, res): Promise<void> => {
       .limit(1);
 
     if (existing) {
-      res.status(400).json({ error: "Une session journalière existe déjà pour aujourd'hui." });
+      if (existing.isOpen) {
+        res.status(400).json({ error: "Une session journalière existe déjà pour aujourd'hui." });
+        return;
+      }
+
+      await db
+        .update(daySessionsTable)
+        .set({
+          isOpen: true,
+          closingCash: null,
+          closingMtn: null,
+          closingMoov: null,
+          closingCeltis: null,
+          closingTotal: null,
+          closedAt: null,
+        })
+        .where(eq(daySessionsTable.id, existing.id));
+
+      const [reopened] = await db
+        .select()
+        .from(daySessionsTable)
+        .where(eq(daySessionsTable.id, existing.id))
+        .limit(1);
+
+      res.json({
+        id: reopened.id,
+        agentId: reopened.agentId,
+        date: reopened.date,
+        openingBalances: {
+          cash: reopened.openingCash,
+          MTN: reopened.openingMtn,
+          Moov: reopened.openingMoov,
+          Celtis: reopened.openingCeltis,
+        },
+        openingTotal: reopened.openingTotal,
+        closingBalances: null,
+        closingTotal: null,
+        isOpen: reopened.isOpen,
+        openedAt: reopened.openedAt.toISOString(),
+        closedAt: null,
+      });
       return;
     }
 
@@ -142,12 +182,19 @@ router.post("/close", requireAuth, async (req, res): Promise<void> => {
       return;
     }
 
-    const txs = await db
+    const todayStart = new Date(today + "T00:00:00.000Z");
+    const todayEnd = new Date(today + "T23:59:59.999Z");
+
+    const todayTxs = await db
       .select()
       .from(transactionsTable)
-      .where(eq(transactionsTable.agentId, agent.id));
-
-    const todayTxs = txs.filter((t) => t.createdAt.toISOString().startsWith(today));
+      .where(
+        and(
+          eq(transactionsTable.agentId, agent.id),
+          gte(transactionsTable.createdAt, todayStart),
+          lt(transactionsTable.createdAt, todayEnd)
+        )
+      );
 
     let mtn = session.openingMtn;
     let moov = session.openingMoov;
@@ -160,10 +207,14 @@ router.post("/close", requireAuth, async (req, res): Promise<void> => {
         if (op === "MTN") mtn += amount;
         else if (op === "Moov") moov += amount;
         else if (op === "Celtis") celtis += amount;
-      } else {
+      } else if (tx.type === "vente") {
         if (op === "MTN") mtn -= amount;
         else if (op === "Moov") moov -= amount;
         else if (op === "Celtis") celtis -= amount;
+      } else if (tx.type === "recharge" || tx.type === "retrait") {
+        if (op === "MTN") mtn += amount;
+        else if (op === "Moov") moov += amount;
+        else if (op === "Celtis") celtis += amount;
       }
     });
 

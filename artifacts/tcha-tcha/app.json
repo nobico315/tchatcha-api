@@ -4,32 +4,53 @@
     "slug": "tcha-tcha",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/icon.png",
     "scheme": "tcha-tcha",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/icon.png",
+      "image": "./assets/icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#191970"
     },
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "L'accès à la caméra est nécessaire pour scanner les codes-barres des produits."
+      },
+      "bundleIdentifier": "com.anonymous.tchatcha"
     },
     "android": {
-      "backgroundColor": "#191970"
+      "backgroundColor": "#191970",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.anonymous.tchatcha"
     },
     "web": {
-      "favicon": "./assets/images/icon.png"
+      "favicon": "./assets/icon.png"
     },
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "L'accès à la caméra est nécessaire pour scanner les codes-barres des produits."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "3d7604d1-9d11-413f-81a5-6fc1f715744a"
+      }
     }
   }
 }

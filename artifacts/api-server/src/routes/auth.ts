@@ -82,6 +82,25 @@ router.post("/register", async (req, res): Promise<void> => {
       secure: process.env.NODE_ENV === "production",
     });
 
+    let managerInfo = null;
+    if (user.managerId) {
+      try {
+        const [mgr] = await db
+          .select()
+          .from(usersTable)
+          .where(eq(usersTable.id, user.managerId))
+          .limit(1);
+        if (mgr) {
+          managerInfo = {
+            id: mgr.id,
+            firstName: mgr.firstName,
+            lastName: mgr.lastName,
+            phone: mgr.phone,
+          };
+        }
+      } catch {}
+    }
+
     res.json({
       success: true,
       token: sessionToken,
@@ -94,6 +113,7 @@ router.post("/register", async (req, res): Promise<void> => {
         managerId: user.managerId,
         subscriptionExpiry: user.subscriptionExpiry,
         createdAt: user.createdAt,
+        manager: managerInfo,
       },
     });
   } catch (error) {
@@ -141,6 +161,23 @@ router.post("/login", async (req, res): Promise<void> => {
       secure: process.env.NODE_ENV === "production",
     });
 
+    let managerInfo = null;
+    if (user.managerId) {
+      const [mgr] = await db
+        .select()
+        .from(usersTable)
+        .where(eq(usersTable.id, user.managerId))
+        .limit(1);
+      if (mgr) {
+        managerInfo = {
+          id: mgr.id,
+          firstName: mgr.firstName,
+          lastName: mgr.lastName,
+          phone: mgr.phone,
+        };
+      }
+    }
+
     res.json({
       success: true,
       token: sessionToken,
@@ -153,6 +190,7 @@ router.post("/login", async (req, res): Promise<void> => {
         managerId: user.managerId,
         subscriptionExpiry: user.subscriptionExpiry,
         createdAt: user.createdAt,
+        manager: managerInfo,
       },
     });
   } catch (error) {
@@ -173,9 +211,29 @@ router.post("/logout", requireAuth, async (req, res): Promise<void> => {
   }
 });
 
-router.get("/me", requireAuth, (req, res): void => {
+router.get("/me", requireAuth, async (req, res): Promise<void> => {
   const authReq = req as AuthenticatedRequest;
   const user = authReq.user!;
+  
+  let managerInfo = null;
+  if (user.managerId) {
+    try {
+      const [mgr] = await db
+        .select()
+        .from(usersTable)
+        .where(eq(usersTable.id, user.managerId))
+        .limit(1);
+      if (mgr) {
+        managerInfo = {
+          id: mgr.id,
+          firstName: mgr.firstName,
+          lastName: mgr.lastName,
+          phone: mgr.phone,
+        };
+      }
+    } catch {}
+  }
+
   res.json({
     id: user.id,
     firstName: user.firstName,
@@ -185,6 +243,7 @@ router.get("/me", requireAuth, (req, res): void => {
     managerId: user.managerId,
     subscriptionExpiry: user.subscriptionExpiry,
     createdAt: user.createdAt,
+    manager: managerInfo,
   });
 });
 

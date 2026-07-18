@@ -8,6 +8,18 @@ export interface AuthenticatedRequest extends Request {
   session?: typeof sessionsTable.$inferSelect;
 }
 
+// Routes that remain accessible even with an expired subscription
+// Uses originalUrl (full path) to work regardless of router nesting
+const SUBSCRIPTION_EXEMPT_PATHS = [
+  "/auth/login",
+  "/auth/register",
+  "/auth/logout",
+  "/auth/me",
+  "/auth/forgot-pin",
+  "/healthz",
+  "/health",
+];
+
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const authReq = req as AuthenticatedRequest;
   
@@ -54,6 +66,16 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
     if (!user) {
       res.status(412).json({ error: "Utilisateur introuvable." });
+      return;
+    }
+
+    // Check subscription expiry (exempt certain routes)
+    const isExempt = SUBSCRIPTION_EXEMPT_PATHS.some((p) => req.originalUrl.startsWith(p));
+    if (!isExempt && user.subscriptionExpiry && new Date(user.subscriptionExpiry) < now) {
+      res.status(402).json({
+        error: "Abonnement expiré. Veuillez renouveler votre abonnement pour continuer.",
+        code: "SUBSCRIPTION_EXPIRED",
+      });
       return;
     }
 

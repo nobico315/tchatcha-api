@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { usersTable } from "@workspace/db";
+import { usersTable, notificationsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { scryptSync, randomBytes, timingSafeEqual } from "crypto";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/authMiddleware";
@@ -20,6 +20,11 @@ function verifyPin(pin: string, storedHash: string): boolean {
   return timingSafeEqual(Buffer.from(hashed, "hex"), Buffer.from(testHash, "hex"));
 }
 
+function notifId(): string {
+  return randomBytes(12).toString("hex");
+}
+
+// GET / — List all agents belonging to the authenticated gérant
 router.get("/", requireAuth, async (req, res): Promise<void> => {
   const authReq = req as AuthenticatedRequest;
   const manager = authReq.user!;
@@ -52,6 +57,8 @@ router.get("/", requireAuth, async (req, res): Promise<void> => {
   }
 });
 
+// POST /create — Gérant creates a new agent
+// L'abonnement du gérant se propage automatiquement à l'agent créé
 router.post("/create", requireAuth, async (req, res): Promise<void> => {
   const authReq = req as AuthenticatedRequest;
   const manager = authReq.user!;
@@ -81,8 +88,12 @@ router.post("/create", requireAuth, async (req, res): Promise<void> => {
 
     const agentId = Date.now().toString() + Math.random().toString(36).substring(2, 11);
     const hashedPin = hashPin(pin);
-    const subscriptionExpiry = new Date();
-    subscriptionExpiry.setDate(subscriptionExpiry.getDate() + 30);
+
+    // ── Propagation de l'abonnement du gérant ────────────────────────────
+    const managerExpiry = manager.subscriptionExpiry ?? new Date();
+    const now = new Date();
+    // L'agent bénéficie de l'abonnement du gérant si celui-ci est encore valide
+    const agentExpiry = managerExpiry > now ? managerExpiry : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
     await db.insert(usersTable).values({
       id: agentId,
@@ -92,7 +103,7 @@ router.post("/create", requireAuth, async (req, res): Promise<void> => {
       pin: hashedPin,
       role: "agent",
       managerId: manager.id,
-      subscriptionExpiry,
+      subscriptionExpiry: agentExpiry,
     });
 
     const [agent] = await db
@@ -100,6 +111,15 @@ router.post("/create", requireAuth, async (req, res): Promise<void> => {
       .from(usersTable)
       .where(eq(usersTable.id, agentId))
       .limit(1);
+
+    // ── Notification pour l'agent ─────────────────────────────────────────
+    await db.insert(notificationsTable).values({
+      id: notifId(),
+      userId: agentId,
+      type: "agent_attached",
+      title: "Bienvenue dans l'équipe ! 🎉",
+      body: `Vous avez été ajouté(e) à l'équipe de ${manager.firstName} ${manager.lastName}. Votre abonnement est actif jusqu'au ${agentExpiry.toLocaleDateString("fr-FR")}.`,
+    });
 
     res.json({
       success: true,
@@ -119,6 +139,8 @@ router.post("/create", requireAuth, async (req, res): Promise<void> => {
   }
 });
 
+// POST /attach — Gérant attaches an existing agent by phone + PIN
+// L'abonnement du gérant se propage automatiquement
 router.post("/attach", requireAuth, async (req, res): Promise<void> => {
   const authReq = req as AuthenticatedRequest;
   const manager = authReq.user!;
@@ -161,27 +183,28 @@ router.post("/attach", requireAuth, async (req, res): Promise<void> => {
       return;
     }
 
-    if (agent.managerId === manager.id) {
-      res.json({
-        success: true,
-        user: {
-          id: agent.id,
-          firstName: agent.firstName,
-          lastName: agent.lastName,
-          phone: agent.phone,
-          role: agent.role as "agent" | "gerant",
-          managerId: agent.managerId,
-          subscriptionExpiry: agent.subscriptionExpiry,
-          createdAt: agent.createdAt,
-        },
-      });
-      return;
-    }
+    // ── Propagation de l'abonnement du gérant ────────────────────────────
+    const managerExpiry = manager.subscriptionExpiry ?? new Date();
+    const now = new Date();
+    const agentExpiry = managerExpiry > now ? managerExpiry : agent.subscriptionExpiry;
+
+    const isAlreadyAttached = agent.managerId === manager.id;
 
     await db
       .update(usersTable)
-      .set({ managerId: manager.id })
+      .set({ managerId: manager.id, subscriptionExpiry: agentExpiry })
       .where(eq(usersTable.id, agent.id));
+
+    // ── Notification uniquement si c'est un nouveau rattachement ─────────
+    if (!isAlreadyAttached) {
+      await db.insert(notificationsTable).values({
+        id: notifId(),
+        userId: agent.id,
+        type: "agent_attached",
+        title: "Vous avez été rattaché(e) à un gérant ! 🔗",
+        body: `${manager.firstName} ${manager.lastName} vous a ajouté(e) à son équipe. Votre abonnement est actif jusqu'au ${agentExpiry.toLocaleDateString("fr-FR")}.`,
+      });
+    }
 
     res.json({
       success: true,
@@ -192,12 +215,60 @@ router.post("/attach", requireAuth, async (req, res): Promise<void> => {
         phone: agent.phone,
         role: agent.role as "agent" | "gerant",
         managerId: manager.id,
-        subscriptionExpiry: agent.subscriptionExpiry,
+        subscriptionExpiry: agentExpiry,
         createdAt: agent.createdAt,
       },
     });
   } catch (error) {
     res.status(500).json({ success: false, error: "Erreur interne lors du rattachement de l'agent." });
+  }
+});
+
+// POST /propagate-subscription — Appelé quand le gérant renouvelle son abonnement
+// Tous les agents rattachés bénéficient automatiquement du même abonnement
+router.post("/propagate-subscription", requireAuth, async (req, res): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
+  const manager = authReq.user!;
+
+  if (manager.role !== "gerant") {
+    res.status(403).json({ success: false, error: "Accès réservé aux gérants." });
+    return;
+  }
+
+  try {
+    // Récupérer tous les agents du gérant
+    const agents = await db
+      .select()
+      .from(usersTable)
+      .where(and(eq(usersTable.role, "agent"), eq(usersTable.managerId, manager.id)));
+
+    if (agents.length === 0) {
+      res.json({ success: true, updated: 0 });
+      return;
+    }
+
+    const managerExpiry = manager.subscriptionExpiry;
+
+    // Mettre à jour l'abonnement de chaque agent
+    for (const agent of agents) {
+      await db
+        .update(usersTable)
+        .set({ subscriptionExpiry: managerExpiry })
+        .where(eq(usersTable.id, agent.id));
+
+      // Notifier chaque agent
+      await db.insert(notificationsTable).values({
+        id: notifId(),
+        userId: agent.id,
+        type: "manager_subscribed",
+        title: "Abonnement renouvelé ! 🎊",
+        body: `Votre gérant ${manager.firstName} ${manager.lastName} a renouvelé son abonnement. Vous en bénéficiez automatiquement jusqu'au ${managerExpiry.toLocaleDateString("fr-FR")}.`,
+      });
+    }
+
+    res.json({ success: true, updated: agents.length });
+  } catch (error) {
+    res.status(500).json({ success: false, error: "Erreur lors de la propagation de l'abonnement." });
   }
 });
 

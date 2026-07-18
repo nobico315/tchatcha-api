@@ -13,8 +13,8 @@ import {
   getSavedClients as apiGetSavedClients
 } from "@workspace/api-client-react";
 
-export type TransactionType = "depot" | "retrait" | "vente";
-export type SyncStatus = "synced" | "pending" | "error";
+export type TransactionType = "depot" | "retrait" | "vente" | "recharge";
+export type SyncStatus = "synced" | "pending" | "error" | "pending_update";
 export type Operator = "MTN" | "Moov" | "Celtis";
 
 export interface SavedClient {
@@ -61,6 +61,7 @@ export interface DaySession {
   isOpen: boolean;
   openedAt: string;
   closedAt?: string;
+  syncStatus?: "synced" | "pending" | "pending_close" | "error";
 }
 
 interface TransactionLog {
@@ -82,6 +83,8 @@ interface TransactionContextType {
   addTransaction: (data: Omit<Transaction, "id" | "syncStatus" | "createdAt">) => Promise<Transaction>;
   updateTransaction: (id: string, changes: Partial<Omit<Transaction, "id" | "createdAt">>) => Promise<Transaction | null>;
   deleteTransaction: (id: string) => Promise<void>;
+  getErrorTransactions: () => Transaction[];
+  clearErrorTransaction: (id: string) => Promise<void>;
   getBalance: (agentId: string) => number;
   getSessionBalances: (agentId: string) => { cash: number; MTN: number; Moov: number; Celtis: number; total: number };
   getSavedClientByPhone: (phone: string) => SavedClient | null;
@@ -90,6 +93,7 @@ interface TransactionContextType {
   refreshTransactions: () => Promise<void>;
   getTodaySession: (agentId: string) => DaySession | null;
   openDay: (agentId: string, balances: { cash: number; MTN: number; Moov: number; Celtis: number }) => Promise<DaySession>;
+  reopenDay: (agentId: string) => Promise<DaySession>;
   closeDay: (agentId: string, closingCash: number) => Promise<DaySession>;
   getTransactionLogs: (transactionId?: string) => TransactionLog[];
 }
@@ -156,13 +160,39 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
     isSyncingRef.current = true;
 
     try {
-      // 1. Sync pending transactions
-      const localTxs = await loadData<Transaction>(TX_KEY);
-      const pendingTxs = localTxs.filter((t) => t.syncStatus === "pending");
+      // 0. Sync pending deletions
+      try {
+        const delStored = await AsyncStorage.getItem("@tcha_pending_deletions");
+        const delQueue: string[] = delStored ? JSON.parse(delStored) : [];
+        if (delQueue.length > 0) {
+          const remainingDeletes: string[] = [];
+          for (const id of delQueue) {
+            try {
+              await apiDeleteTransaction(id);
+            } catch (err: any) {
+              const status = err?.status ?? err?.statusCode;
+              if (status !== 404) {
+                remainingDeletes.push(id);
+              }
+            }
+          }
+          await AsyncStorage.setItem("@tcha_pending_deletions", JSON.stringify(remainingDeletes));
+        }
+      } catch (err) {
+        console.warn("[TX] Pending deletes sync failed:", err);
+      }
 
-      if (pendingTxs.length > 0) {
-        for (const tx of pendingTxs) {
-          try {
+      // 1. Sync pending creations and updates (skip error ones)
+      const localTxs = await loadData<Transaction>(TX_KEY);
+      let subscriptionExpired = false;
+      let txsChanged = false;
+
+      for (const tx of localTxs) {
+        if (tx.syncStatus !== "pending" && tx.syncStatus !== "pending_update") continue;
+        if (subscriptionExpired) break;
+
+        try {
+          if (tx.syncStatus === "pending") {
             await apiCreateTransaction({
               id: tx.id,
               type: tx.type,
@@ -175,14 +205,43 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
               saleMode: tx.saleMode || undefined,
               createdAt: tx.createdAt,
             });
-            // Mark as synced
-            tx.syncStatus = "synced";
-          } catch (err) {
-            // Keep as pending to retry later
+          } else if (tx.syncStatus === "pending_update") {
+            await apiUpdateTransaction(tx.id, {
+              type: tx.type,
+              clientName: tx.clientName,
+              clientPhone: tx.clientPhone,
+              amount: tx.amount,
+              operator: tx.operator,
+              note: tx.note || undefined,
+              savedClient: !!tx.savedClient,
+              saleMode: tx.saleMode || undefined,
+            });
+          }
+          tx.syncStatus = "synced";
+          txsChanged = true;
+          console.log(`[TX] ✓ Transaction synced: ${tx.id}`);
+        } catch (err: any) {
+          const errorMsg = err?.message || "";
+          const status = err?.status ?? err?.statusCode;
+
+          if (status === 402) {
+            subscriptionExpired = true;
+            console.warn("[TX] ⛔ Subscription expired — halting sync.");
+          } else if (status === 400 && errorMsg.includes("journée")) {
+            tx.syncStatus = "error";
+            txsChanged = true;
+            console.warn(`[TX] ✗ Transaction marked as ERROR (day closed): ${tx.id}`);
+          } else {
+            console.warn(`[TX] ⏳ Failed to sync transaction ${tx.id} (will retry): ${errorMsg}`);
           }
         }
+      }
+      
+      if (txsChanged) {
         await saveTransactions(localTxs);
       }
+
+      if (subscriptionExpired) return;
 
       // 2. Fetch fresh data from backend
       try {
@@ -202,37 +261,108 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
           createdAt: t.createdAt,
         }));
 
-        // Merge keeping pending ones
+        // Merge: keep pending + error locals; replace synced with server data
         const latestLocal = await loadData<Transaction>(TX_KEY);
-        const pending = latestLocal.filter((t) => t.syncStatus === "pending");
+        const localNonSynced = latestLocal.filter((t) => t.syncStatus !== "synced");
         const merged = [
-          ...pending,
-          ...normalized.filter((st) => !pending.some((pt) => pt.id === st.id))
+          ...localNonSynced,
+          ...normalized.filter((st) => !localNonSynced.some((lt) => lt.id === st.id)),
         ];
         await saveTransactions(merged);
       } catch {}
 
-      // 3. Sync sessions
+      // 3. Sync sessions (pending opens and closes)
       try {
-        const todaySess = await apiGetTodaySession();
-        if (todaySess) {
-          const normalizedSess: DaySession = {
-            id: todaySess.id,
-            agentId: todaySess.agentId,
-            date: todaySess.date,
-            openingBalances: todaySess.openingBalances,
-            openingTotal: todaySess.openingTotal,
-            closingBalances: todaySess.closingBalances || undefined,
-            closingTotal: todaySess.closingTotal || undefined,
-            isOpen: todaySess.isOpen,
-            openedAt: todaySess.openedAt,
-            closedAt: todaySess.closedAt || undefined,
-          };
-          const latestSessions = await loadData<DaySession>(SESSIONS_KEY);
-          const filtered = latestSessions.filter((s) => s.id !== normalizedSess.id);
-          await saveSessions([normalizedSess, ...filtered]);
+        const latestSessions = await loadData<DaySession>(SESSIONS_KEY);
+        let sessionsChanged = false;
+
+        for (const session of latestSessions) {
+          if (session.syncStatus === "pending") {
+            try {
+              const res = await apiOpenSession({
+                balances: {
+                  cash: session.openingBalances?.cash ?? 0,
+                  MTN: session.openingBalances?.MTN ?? 0,
+                  Moov: session.openingBalances?.Moov ?? 0,
+                  Celtis: session.openingBalances?.Celtis ?? 0,
+                }
+              });
+              session.id = res.id;
+              session.syncStatus = "synced";
+              sessionsChanged = true;
+              
+              if (!session.isOpen && session.closingBalances) {
+                const closeRes = await apiCloseSession({
+                  closingCash: session.closingBalances.cash
+                });
+                session.closingBalances = closeRes.closingBalances || session.closingBalances;
+                session.closingTotal = closeRes.closingTotal;
+                session.closedAt = closeRes.closedAt;
+              }
+            } catch (err: any) {
+              console.warn("[SESSION] Failed to sync opening:", err?.message);
+            }
+          } else if (session.syncStatus === "pending_close") {
+            try {
+              if (session.closingBalances) {
+                const closeRes = await apiCloseSession({
+                  closingCash: session.closingBalances.cash
+                });
+                session.syncStatus = "synced";
+                session.closingBalances = closeRes.closingBalances || session.closingBalances;
+                session.closingTotal = closeRes.closingTotal;
+                session.closedAt = closeRes.closedAt;
+                sessionsChanged = true;
+              }
+            } catch (err: any) {
+              const status = err?.status ?? err?.statusCode;
+              console.warn("[SESSION] Failed to sync closing:", err?.message);
+              // Si le serveur dit qu'aucune session n'est ouverte (HTTP 400), on arrête d'insister
+              if (status === 400 || err?.message?.includes("400") || err?.message?.includes("Aucune session")) {
+                session.syncStatus = "synced"; // On force le statut à synchronisé car elle n'existe pas en ligne
+                sessionsChanged = true;
+              }
+            }
+          }
         }
-      } catch {}
+
+        if (sessionsChanged) {
+          await saveSessions(latestSessions);
+        }
+
+        const today = todayString();
+        const hasPendingToday = latestSessions.some((s) => s.date === today && s.syncStatus !== "synced");
+        
+        if (!hasPendingToday) {
+          try {
+            const todaySess = await apiGetTodaySession();
+            if (todaySess) {
+              const normalizedSess: DaySession = {
+                id: todaySess.id,
+                agentId: todaySess.agentId,
+                date: todaySess.date,
+                openingBalances: todaySess.openingBalances,
+                openingTotal: todaySess.openingTotal,
+                closingBalances: todaySess.closingBalances || undefined,
+                closingTotal: todaySess.closingTotal || undefined,
+                isOpen: todaySess.isOpen,
+                openedAt: todaySess.openedAt,
+                closedAt: todaySess.closedAt || undefined,
+                syncStatus: "synced",
+              };
+              const filtered = latestSessions.filter((s) => s.date !== today);
+              await saveSessions([normalizedSess, ...filtered]);
+            }
+          } catch (err: any) {
+            const status = err?.status ?? err?.statusCode;
+            if (status !== 404) {
+              throw err;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[SESSION] Sync failed:", err);
+      }
 
       // 4. Sync clients
       try {
@@ -268,6 +398,7 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
     }
   }, [isOnline]);
 
+
   useEffect(() => {
     loadInitialData();
     const unsub = NetInfo.addEventListener((state) => {
@@ -280,6 +411,13 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (isOnline) {
       syncPendingData();
+      
+      // Set up periodic sync every 10 seconds if online
+      const syncInterval = setInterval(() => {
+        syncPendingData();
+      }, 10000);
+      
+      return () => clearInterval(syncInterval);
     }
   }, [isOnline, syncPendingData]);
 
@@ -333,17 +471,17 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
     txs.forEach((tx) => {
       const operator = tx.operator;
       if (tx.type === "depot") {
-        // Dépôt : L'agent reçoit du cash physique (+cash), et transfère de la monnaie électronique (-opérateur)
+        // Dépôt : l'agent reçoit du cash physique (+cash) et transfère de la monnaie électronique (-opérateur)
         balances.cash += tx.amount;
         balances[operator] -= tx.amount;
-      } else if (tx.type === "retrait") {
-        // Retrait : L'agent donne du cash physique (-cash), et reçoit de la monnaie électronique (+opérateur)
+      } else if (tx.type === "vente") {
+        // Vente de crédit/forfait : l'agent reçoit du cash (+cash) et déduit de la monnaie électronique (-opérateur)
+        balances.cash += tx.amount;
+        balances[operator] -= tx.amount;
+      } else if (tx.type === "recharge" || tx.type === "retrait") {
+        // Recharge d’un compte virtuel : le cash diminue et le compte virtuel augmente
         balances.cash -= tx.amount;
         balances[operator] += tx.amount;
-      } else if (tx.type === "vente") {
-        // Vente de crédit/forfait : L'agent reçoit du cash (+cash), et déduit de la monnaie électronique (-opérateur)
-        balances.cash += tx.amount;
-        balances[operator] -= tx.amount;
       }
     });
 
@@ -355,25 +493,37 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
 
   const syncStatusGlobal: SyncStatus = !isOnline
     ? "error"
-    : transactions.some((t) => t.syncStatus === "pending")
+    : transactions.some((t) => t.syncStatus === "pending" || t.syncStatus === "pending_update")
     ? "pending"
     : "synced";
 
-  const addTransaction = useCallback(async (data: Omit<Transaction, "id" | "syncStatus" | "createdAt">) => {
+  const addTransaction = useCallback(async (data: Omit<Transaction, "id" | "syncStatus" | "createdAt">): Promise<Transaction> => {
+    // Check if day session is open before creating transaction
+    const sessionData = await loadData<DaySession>(SESSIONS_KEY);
+    const today = todayString();
+    const todaySess = sessionData.find((s) => s.agentId === data.agentId && s.date === today);
+    
+    if (!todaySess || !todaySess.isOpen) {
+      throw new Error("Vous devez ouvrir votre journée avant d'enregistrer des transactions.");
+    }
+
     const newTx: Transaction = {
       ...data,
       id: generateId(),
-      syncStatus: isOnline ? "synced" : "pending",
+      syncStatus: "pending", // Always start as pending, mark as synced after successful server response
       createdAt: new Date().toISOString(),
     };
+    
     const stored = await AsyncStorage.getItem(TX_KEY);
     const all: Transaction[] = stored ? JSON.parse(stored) : [];
     const updated = [newTx, ...all];
     await saveTransactions(updated);
+    
     if (newTx.savedClient) {
       await registerClientLocally(newTx.clientName, newTx.clientPhone);
     }
 
+    // Try to sync immediately if online
     if (isOnline) {
       try {
         await apiCreateTransaction({
@@ -388,14 +538,23 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
           saleMode: newTx.saleMode || undefined,
           createdAt: newTx.createdAt,
         });
-      } catch (err) {
-        // Switch to pending if network fails
-        newTx.syncStatus = "pending";
+        
+        // Mark as synced only after successful response
+        newTx.syncStatus = "synced";
         const latest = await loadData<Transaction>(TX_KEY);
-        const rolledBack = latest.map((t) => t.id === newTx.id ? { ...t, syncStatus: "pending" as SyncStatus } : t);
-        await saveTransactions(rolledBack);
+        const updated = latest.map((t) => t.id === newTx.id ? { ...t, syncStatus: "synced" as SyncStatus } : t);
+        await saveTransactions(updated);
+        
+        console.log("[TX] Transaction synced successfully:", newTx.id);
+      } catch (err: any) {
+        // Keep as pending to retry later
+        console.warn("[TX] Failed to sync transaction, keeping as pending:", newTx.id, err?.message);
+        // Don't throw here - transaction is saved locally and will be retried
       }
+    } else {
+      console.log("[TX] Offline mode - transaction saved as pending:", newTx.id);
     }
+    
     return newTx;
   }, [isOnline, savedClients]);
 
@@ -409,29 +568,63 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
       try {
         await apiDeleteTransaction(id);
       } catch {}
+    } else {
+      const delStored = await AsyncStorage.getItem("@tcha_pending_deletions");
+      const delQueue: string[] = delStored ? JSON.parse(delStored) : [];
+      if (!delQueue.includes(id)) {
+        delQueue.push(id);
+        await AsyncStorage.setItem("@tcha_pending_deletions", JSON.stringify(delQueue));
+      }
     }
+  };
+
+  const getErrorTransactions = useCallback(() => {
+    return transactions.filter((t) => t.syncStatus === "error");
+  }, [transactions]);
+
+  const clearErrorTransaction = async (id: string) => {
+    const stored = await AsyncStorage.getItem(TX_KEY);
+    const all: Transaction[] = stored ? JSON.parse(stored) : [];
+    const updated = all.filter((t) => t.id !== id);
+    await saveTransactions(updated);
+    console.log(`[TX] Cleared error transaction: ${id}`);
   };
 
   const updateTransaction = async (id: string, changes: Partial<Omit<Transaction, "id" | "createdAt">>) => {
     const stored = await AsyncStorage.getItem(TX_KEY);
     const all: Transaction[] = stored ? JSON.parse(stored) : [];
-    const updated = all.map((tx) => (tx.id === id ? { ...tx, ...changes } : tx));
+    
+    const originalTx = all.find((tx) => tx.id === id);
+    if (!originalTx) return null;
+
+    const newSyncStatus = originalTx.syncStatus === "pending" ? "pending" : "pending_update";
+
+    const updated = all.map((tx) => (tx.id === id ? { ...tx, ...changes, syncStatus: newSyncStatus as SyncStatus } : tx));
     const changedTx = updated.find((tx) => tx.id === id) ?? null;
     await saveTransactions(updated);
 
     if (isOnline && changedTx) {
       try {
-        await apiUpdateTransaction(id, {
-          type: changedTx.type,
-          clientName: changedTx.clientName,
-          clientPhone: changedTx.clientPhone,
-          amount: changedTx.amount,
-          operator: changedTx.operator,
-          note: changedTx.note || undefined,
-          savedClient: !!changedTx.savedClient,
-          saleMode: changedTx.saleMode || undefined,
-        });
-      } catch {}
+        if (newSyncStatus === "pending") {
+          // Handled by pending create sync loop
+        } else {
+          await apiUpdateTransaction(id, {
+            type: changedTx.type,
+            clientName: changedTx.clientName,
+            clientPhone: changedTx.clientPhone,
+            amount: changedTx.amount,
+            operator: changedTx.operator,
+            note: changedTx.note || undefined,
+            savedClient: !!changedTx.savedClient,
+            saleMode: changedTx.saleMode || undefined,
+          });
+          const latest = await loadData<Transaction>(TX_KEY);
+          const finalTxs = latest.map((t) => t.id === id ? { ...t, syncStatus: "synced" as SyncStatus } : t);
+          await saveTransactions(finalTxs);
+        }
+      } catch {
+        // Keeps pending_update status
+      }
     }
 
     return changedTx;
@@ -483,12 +676,65 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
     await syncPendingData();
   }, [syncPendingData]);
 
+  const reopenDay = useCallback(async (agentId: string): Promise<DaySession> => {
+    const stored = await AsyncStorage.getItem(SESSIONS_KEY);
+    const all: DaySession[] = stored ? JSON.parse(stored) : [];
+    const today = todayString();
+    const existing = all.find((s) => s.agentId === agentId && s.date === today && !s.isOpen);
+    if (!existing) throw new Error("Aucune session clôturée à rouvrir pour aujourd'hui.");
+
+    const reopenedSession: DaySession = {
+      ...existing,
+      isOpen: true,
+      closingBalances: undefined,
+      closingTotal: undefined,
+      closedAt: undefined,
+      syncStatus: isOnline ? "pending_update" : "pending_update",
+    };
+    const remaining = all.filter((s) => s.id !== existing.id);
+    await saveSessions([reopenedSession, ...remaining]);
+
+    if (isOnline) {
+      try {
+        const res = await apiOpenSession({
+          balances: existing.openingBalances ?? {
+            cash: existing.openingBalance ?? 0,
+            MTN: 0,
+            Moov: 0,
+            Celtis: 0,
+          },
+        });
+        const normalizedSess: DaySession = {
+          id: res.id,
+          agentId: res.agentId,
+          date: res.date,
+          openingBalances: res.openingBalances,
+          openingTotal: res.openingTotal,
+          closingBalances: res.closingBalances || undefined,
+          closingTotal: res.closingTotal || undefined,
+          isOpen: res.isOpen,
+          openedAt: res.openedAt,
+          closedAt: res.closedAt || undefined,
+          syncStatus: "synced",
+        };
+        const latest = await loadData<DaySession>(SESSIONS_KEY);
+        const filtered = latest.filter((s) => s.id !== normalizedSess.id);
+        await saveSessions([normalizedSess, ...filtered]);
+        return normalizedSess;
+      } catch (err) {}
+    }
+    return reopenedSession;
+  }, [isOnline]);
+
   const openDay = useCallback(async (agentId: string, openingBalances: { cash: number; MTN: number; Moov: number; Celtis: number }): Promise<DaySession> => {
     const stored = await AsyncStorage.getItem(SESSIONS_KEY);
     const all: DaySession[] = stored ? JSON.parse(stored) : [];
     const today = todayString();
     const existing = all.find((s) => s.agentId === agentId && s.date === today);
-    if (existing) return existing;
+    if (existing) {
+      if (existing.isOpen) return existing;
+      return reopenDay(agentId);
+    }
 
     const openingTotal = openingBalances.cash + openingBalances.MTN + openingBalances.Moov + openingBalances.Celtis;
     const newSession: DaySession = {
@@ -499,6 +745,7 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
       openingTotal,
       isOpen: true,
       openedAt: new Date().toISOString(),
+      syncStatus: "pending",
     };
     await saveSessions([newSession, ...all]);
 
@@ -518,6 +765,7 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
           isOpen: res.isOpen,
           openedAt: res.openedAt,
           closedAt: res.closedAt || undefined,
+          syncStatus: "synced",
         };
         const latest = await loadData<DaySession>(SESSIONS_KEY);
         const filtered = latest.filter((s) => s.date !== today || s.agentId !== agentId);
@@ -526,7 +774,7 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
       } catch (err) {}
     }
     return newSession;
-  }, [isOnline]);
+  }, [isOnline, reopenDay]);
 
   const closeDay = useCallback(async (agentId: string, closingCash: number): Promise<DaySession> => {
     const stored = await AsyncStorage.getItem(SESSIONS_KEY);
@@ -547,6 +795,8 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
     };
     const closingTotal = closingCash + sessionBalances.MTN + sessionBalances.Moov + sessionBalances.Celtis;
 
+    const newSyncStatus = currentSession.syncStatus === "pending" ? "pending" : "pending_close";
+
     const updated = all.map((s) => {
       if (s.agentId === agentId && s.date === today && s.isOpen) {
         return {
@@ -555,6 +805,7 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
           closingBalances,
           closingTotal,
           closedAt: new Date().toISOString(),
+          syncStatus: newSyncStatus as "synced" | "pending" | "pending_close" | "error",
         };
       }
       return s;
@@ -577,6 +828,7 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
           isOpen: res.isOpen,
           openedAt: res.openedAt,
           closedAt: res.closedAt || undefined,
+          syncStatus: "synced",
         };
         const latest = await loadData<DaySession>(SESSIONS_KEY);
         const filtered = latest.filter((s) => s.id !== normalizedSess.id);
@@ -590,9 +842,9 @@ export function TransactionProvider({ children }: { children: React.ReactNode })
   return (
     <TransactionContext.Provider value={{
       transactions, sessions, transactionLogs, isOnline, syncStatusGlobal,
-      addTransaction, updateTransaction, deleteTransaction, getBalance,
+      addTransaction, updateTransaction, deleteTransaction, getErrorTransactions, clearErrorTransaction, getBalance,
       getSessionBalances, getTransactionsByDate, getTodayStats, refreshTransactions,
-      getTodaySession, openDay, closeDay,
+      getTodaySession, openDay, reopenDay, closeDay,
       getSavedClientByPhone, getTransactionLogs,
     }}>
       {children}

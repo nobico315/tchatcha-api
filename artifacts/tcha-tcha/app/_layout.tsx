@@ -18,6 +18,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider } from "@/context/AuthContext";
 import { TransactionProvider } from "@/context/TransactionContext";
 import { AlertProvider } from "@/context/AlertContext";
+import { ProductProvider } from "@/context/ProductContext";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -68,13 +69,15 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <TransactionProvider>
-              <AlertProvider>
-                <GestureHandlerRootView>
-                  <KeyboardProvider>
-                    <RootLayoutNav />
-                  </KeyboardProvider>
-                </GestureHandlerRootView>
-              </AlertProvider>
+              <ProductProvider>
+                <AlertProvider>
+                  <GestureHandlerRootView>
+                    <KeyboardProvider>
+                      <RootLayoutNav />
+                    </KeyboardProvider>
+                  </GestureHandlerRootView>
+                </AlertProvider>
+              </ProductProvider>
             </TransactionProvider>
           </AuthProvider>
         </QueryClientProvider>
