@@ -2,19 +2,21 @@ import { CheckCircle, CreditCard } from "lucide-react-native";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { formatAmount } from "@/utils/format";
+import { getApiBaseUrl } from "@/utils/apiConfig";
 
 export default function Abonnement() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user, getMyAgents, updateUser } = useAuth();
+  const { user, getMyAgents, confirmFeexPaySubscription } = useAuth();
   const [agentCount, setAgentCount] = useState(1);
   const total = agentCount * 1000;
   const [paid, setPaid] = useState(false);
+  const [paying, setPaying] = useState(false);
   const [PaymentComponent, setPaymentComponent] = useState<React.ComponentType<any> | null>(null);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -53,10 +55,12 @@ export default function Abonnement() {
       const status = result?.status;
 
       if (status === "SUCCESSFUL" || status === "SUCCESS") {
-        const newExpiry = new Date();
-        newExpiry.setDate(newExpiry.getDate() + 30);
-        await updateUser({ subscriptionExpiry: newExpiry.toISOString() });
-        setPaid(true);
+        const res = await confirmFeexPaySubscription(result?.reference || paymentReference);
+        if (res.success) {
+          setPaid(true);
+        } else {
+          Alert.alert("Vérification en attente", res.error || "Le paiement n'a pas encore pu être confirmé.");
+        }
         return;
       }
 
@@ -64,7 +68,7 @@ export default function Abonnement() {
         Alert.alert("Paiement échoué", "Le paiement n'a pas été confirmé. Veuillez réessayer.");
       }
     },
-    [updateUser]
+    [confirmFeexPaySubscription, paymentReference]
   );
 
   useEffect(() => {
@@ -82,19 +86,18 @@ export default function Abonnement() {
       return;
     }
 
+    const apiBaseUrl = getApiBaseUrl();
     const appDeepLink = "tcha-tcha://feexpay-callback";
     const callbackUrl = isWeb
-      ? `${process.env.EXPO_PUBLIC_API_URL ?? ""}/api/feexpay/verify`
+      ? `${apiBaseUrl}/api/feexpay/verify`
       : appDeepLink;
     const errorCallbackUrl = isWeb
-      ? `${process.env.EXPO_PUBLIC_API_URL ?? ""}/api/feexpay/verify?error=1`
+      ? `${apiBaseUrl}/api/feexpay/verify?error=1`
       : appDeepLink;
 
-    const checkoutUrl = `${process.env.EXPO_PUBLIC_API_URL ?? ""}/api/feexpay/checkout?reference=${encodeURIComponent(
+    const checkoutUrl = `${apiBaseUrl}/api/feexpay/checkout?reference=${encodeURIComponent(
       paymentReference
-    )}&amount=${total}&mode=${feexpayMode}&token=${encodeURIComponent(feexpayToken)}&shopId=${encodeURIComponent(
-      feexpayShopId
-    )}&callback_url=${encodeURIComponent(callbackUrl)}&error_callback_url=${encodeURIComponent(errorCallbackUrl)}&callback_info=${encodeURIComponent(
+    )}&amount=${total}&mode=${feexpayMode}&callback_url=${encodeURIComponent(callbackUrl)}&error_callback_url=${encodeURIComponent(errorCallbackUrl)}&callback_info=${encodeURIComponent(
       JSON.stringify({ userId: user?.id, email: user?.phone ?? "" })
     )}`;
 
@@ -103,9 +106,14 @@ export default function Abonnement() {
       return;
     }
 
-    const result = await WebBrowser.openBrowserAsync(checkoutUrl);
-    if (result.type !== "opened") {
-      Alert.alert("Erreur de paiement", "Impossible d'ouvrir le flux de paiement FeexPay.");
+    setPaying(true);
+    try {
+      const result = await WebBrowser.openBrowserAsync(checkoutUrl);
+      if (result.type !== "opened") {
+        Alert.alert("Erreur de paiement", "Impossible d'ouvrir le flux de paiement FeexPay.");
+      }
+    } finally {
+      setPaying(false);
     }
   };
 
@@ -115,34 +123,34 @@ export default function Abonnement() {
         <CheckCircle size={72} color={colors.successText} />
         <Text style={[styles.successTitle, { color: colors.successText }]}>Paiement réussi !</Text>
         <Text style={[styles.successDesc, { color: colors.muted }]}>Votre abonnement a été renouvelé pour 30 jours.</Text>
-        <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: colors.primary, width: "100%" }]} onPress={() => { router.back(); }}>
-          <Text style={[styles.primaryBtnText, { color: colors.accent }]}>Retour au profil</Text>
+        <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: "#191970", width: "100%" }]} onPress={() => { router.back(); }}>
+          <Text style={[styles.primaryBtnText, { color: "#FFFFFF" }]}>Retour au profil</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: colors.surface }} contentContainerStyle={{ paddingBottom: 40 }}>
-      <View style={[styles.header, { paddingTop: topPad + 12, backgroundColor: colors.background }]}>
+    <ScrollView style={{ flex: 1, backgroundColor: "#FFFFFF" }} contentContainerStyle={{ paddingBottom: 40 }}>
+      <View style={[styles.header, { paddingTop: topPad + 12, backgroundColor: "#FFFFFF" }]}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Text style={[styles.back, { color: colors.primary }]}>← Retour</Text>
+          <Text style={[styles.back, { color: "#8E9AB4" }]}>← Retour</Text>
         </TouchableOpacity>
-        <Text style={[styles.heading, { color: colors.primary }]}>Abonnement</Text>
+        <Text style={[styles.heading, { color: "#000000" }]}>Abonnement</Text>
       </View>
 
       <View style={styles.body}>
         {/* Plan card */}
-        <View style={[styles.planCard, { backgroundColor: colors.primary }]}>
+        <View style={[styles.planCard, { backgroundColor: "#191970" }]}>
           <Text style={styles.planName}>Plan Agent Mobile Money</Text>
           <View style={styles.planPriceRow}>
             <Text style={styles.planPrice}>1 000</Text>
             <Text style={styles.planCurrency}> FCFA</Text>
           </View>
           <Text style={styles.planPer}>par agent / mois</Text>
-          {["Transactions illimitées", "Synchronisation automatique", "Rapports journaliers", "Support prioritaire"].map((f) => (
+          {["Synchronisation automatique en ligne", "Données synchronisées entre appareils", "Support prioritaire"].map((f) => (
             <View key={f} style={styles.featureRow}>
-              <CheckCircle size={16} color="#FFD700" />
+              <CheckCircle size={16} color="#4ade80" />
               <Text style={styles.featureText}>{f}</Text>
             </View>
           ))}
@@ -169,12 +177,18 @@ export default function Abonnement() {
         </View>
 
         {paymentError ? (
-          <Text style={[styles.errorText, { color: colors.error }]}>{paymentError}</Text>
+          <Text style={[styles.errorText, { color: "#DC2626" }]}>{paymentError}</Text>
         ) : null}
 
-        <TouchableOpacity style={[styles.payBtn, { backgroundColor: colors.primary }]} onPress={handlePay}>
-          <CreditCard size={20} color={colors.accent} />
-          <Text style={[styles.payBtnText, { color: colors.accent }]}>Payer maintenant via FeexPay</Text>
+        <TouchableOpacity
+          style={[styles.payBtn, { backgroundColor: "#191970", opacity: paying ? 0.7 : 1 }]}
+          onPress={handlePay}
+          disabled={paying}
+        >
+          {paying ? <ActivityIndicator size="small" color="#FFFFFF" /> : <CreditCard size={20} color="#FFFFFF" />}
+          <Text style={[styles.payBtnText, { color: "#FFFFFF" }]}>
+            {paying ? "Ouverture de FeexPay..." : "Payer maintenant via FeexPay"}
+          </Text>
         </TouchableOpacity>
 
         {isWeb && missingFeexpayConfig ? (
@@ -196,8 +210,8 @@ const styles = StyleSheet.create({
   planCard: { borderRadius: 20, padding: 24, gap: 10 },
   planName: { color: "rgba(255,255,255,0.8)", fontSize: 13, fontFamily: "Poppins_600SemiBold" },
   planPriceRow: { flexDirection: "row", alignItems: "baseline" },
-  planPrice: { color: "#FFD700", fontSize: 36, fontFamily: "Poppins_700Bold" },
-  planCurrency: { color: "#FFD700", fontSize: 20, fontFamily: "Poppins_700Bold" },
+  planPrice: { color: "#FFFFFF", fontSize: 36, fontFamily: "Poppins_700Bold" },
+  planCurrency: { color: "#FFFFFF", fontSize: 20, fontFamily: "Poppins_700Bold" },
   planPer: { color: "rgba(255,255,255,0.6)", fontSize: 12, fontFamily: "Poppins_400Regular", marginBottom: 8 },
   featureRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   featureText: { color: "#FFFFFF", fontSize: 13, fontFamily: "Poppins_400Regular" },

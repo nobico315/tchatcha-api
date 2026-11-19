@@ -10,6 +10,7 @@ interface SyncStatusProps {
 const config = {
   synced: { bg: "#eafaf0", text: "#1a7a4a", label: "Synchronisé", Icon: CheckCircle },
   pending: { bg: "#FFF8DC", text: "#7a5c00", label: "Sync en attente...", Icon: Clock },
+  pending_update: { bg: "#FFF8DC", text: "#7a5c00", label: "Mise à jour en attente...", Icon: Clock },
   error: { bg: "#fdecea", text: "#b00000", label: "Hors ligne", Icon: WifiOff },
 };
 

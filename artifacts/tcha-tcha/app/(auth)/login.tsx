@@ -1,7 +1,8 @@
-import { Wallet, Phone, Lock } from "lucide-react-native";
+import { ArrowRight, CheckCircle2, Eye, EyeOff, Lock, Phone, Wallet, X } from "lucide-react-native";
 import { router } from "expo-router";
-import React, { useState, useRef } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -18,6 +19,13 @@ import { PinInput } from "@/components/PinInput";
 import { ProgressModal, type ProgressStep } from "@/components/ProgressModal";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { detectOperatorFromDigits, formatPhonePairs } from "@/utils/beninPhone";
+
+const OPERATOR_STYLES: Record<string, { bg: string; text: string }> = {
+  MTN: { bg: "#FEF3C7", text: "#92400E" },
+  Moov: { bg: "#E0F2FE", text: "#075985" },
+  Celtis: { bg: "#DCFCE7", text: "#166534" },
+};
 
 export default function Login() {
   const colors = useColors();
@@ -25,9 +33,11 @@ export default function Login() {
   const { login } = useAuth();
   const [phone, setPhone] = useState("");
   const [pin, setPin] = useState("");
+  const [showPin, setShowPin] = useState(false);
+  const [phoneFocused, setPhoneFocused] = useState(false);
+  const [pinFocusKey, setPinFocusKey] = useState(0);
   const [loading, setLoading] = useState(false);
 
-  // State for progress modal
   const [showProgress, setShowProgress] = useState(false);
   const [steps, setSteps] = useState<ProgressStep[]>([
     { id: "validate", label: "Validation des données", status: "pending" },
@@ -37,26 +47,39 @@ export default function Login() {
   const [progressError, setProgressError] = useState<string>("");
   const timeoutRef = useRef<any>(null);
 
+  const isPhoneValid = phone.length === 10 && phone.startsWith("01");
+  const isFormReady = isPhoneValid && pin.length === 6 && !loading;
+
+  const detectedOperator = useMemo(() => {
+    if (!phone.startsWith("01") || phone.length < 4) return null;
+    return detectOperatorFromDigits(phone.slice(2));
+  }, [phone]);
+
+  const formattedPhone = useMemo(() => formatPhonePairs(phone), [phone]);
+
+  const handlePhoneChange = (text: string) => {
+    const digits = text.replace(/[^0-9]/g, "").slice(0, 10);
+    setPhone(digits);
+    if (digits.length === 10 && digits.startsWith("01")) {
+      setPinFocusKey((k) => k + 1);
+    }
+  };
+
   const updateStep = (stepId: string, status: "pending" | "loading" | "success" | "error") => {
-    setSteps((prev) =>
-      prev.map((s) => (s.id === stepId ? { ...s, status } : s))
-    );
+    setSteps((prev) => prev.map((s) => (s.id === stepId ? { ...s, status } : s)));
   };
 
   const handleLogin = async () => {
-    // Basic validation
     if (!phone || pin.length < 6) {
-      Alert.alert("Erreur", "Veuillez saisir votre numéro et votre code PIN.");
+      Alert.alert("Champs requis", "Veuillez saisir votre numéro et votre code PIN à 6 chiffres.");
       return;
     }
 
-    // Benin 10-digit phone number check
-    if (phone.length !== 10 || !phone.startsWith("01")) {
-      Alert.alert("Erreur", "Veuillez saisir un numéro béninois valide à 10 chiffres (commençant par 01).");
+    if (!isPhoneValid) {
+      Alert.alert("Numéro invalide", "Veuillez saisir un numéro béninois à 10 chiffres commençant par 01.");
       return;
     }
 
-    // Reset steps
     setSteps([
       { id: "validate", label: "Validation des données", status: "pending" },
       { id: "auth", label: "Vérification des identifiants", status: "pending" },
@@ -67,25 +90,21 @@ export default function Login() {
     setLoading(true);
 
     try {
-      // Step 1: Validation
       updateStep("validate", "loading");
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await new Promise((resolve) => setTimeout(resolve, 250));
       updateStep("validate", "success");
 
-      // Step 2: Authentication with timeout
       updateStep("auth", "loading");
       const loginPromise = login(`+229${phone}`, pin);
 
-      const timeoutPromise = new Promise<{ success: false; error: string }>(
-        (resolve) => {
-          timeoutRef.current = setTimeout(() => {
-            resolve({
-              success: false,
-              error: "La demande a dépassé le délai d'attente (30s). Vérifiez votre connexion internet.",
-            });
-          }, 30000);
-        }
-      );
+      const timeoutPromise = new Promise<{ success: false; error: string }>((resolve) => {
+        timeoutRef.current = setTimeout(() => {
+          resolve({
+            success: false,
+            error: "La demande a dépassé le délai d'attente (30s). Vérifiez votre connexion internet.",
+          });
+        }, 30000);
+      });
 
       const result = await Promise.race([loginPromise, timeoutPromise]);
 
@@ -97,23 +116,18 @@ export default function Login() {
       }
 
       updateStep("auth", "success");
-
-      // Step 3: Session
       updateStep("session", "loading");
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 400));
       updateStep("session", "success");
 
-      // Success! Redirect after 1 second
       setTimeout(() => {
         setLoading(false);
         setShowProgress(false);
         router.replace("/(tabs)");
-      }, 1000);
+      }, 700);
     } catch (error) {
       updateStep("auth", "error");
-      setProgressError(
-        error instanceof Error ? error.message : "Erreur lors de la connexion"
-      );
+      setProgressError(error instanceof Error ? error.message : "Erreur lors de la connexion");
       setLoading(false);
     } finally {
       if (timeoutRef.current) {
@@ -122,100 +136,194 @@ export default function Login() {
     }
   };
 
-  const handleRetry = () => {
-    handleLogin();
-  };
+  const handleRetry = () => handleLogin();
 
   const handleCancel = () => {
     setShowProgress(false);
     setLoading(false);
     setPin("");
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView
-        contentContainerStyle={[styles.container, { paddingTop: insets.top + 50, paddingBottom: insets.bottom + 40 }]}
+        contentContainerStyle={[
+          styles.container,
+          { paddingTop: insets.top + 36, paddingBottom: insets.bottom + 32 },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Logo/Branding section */}
+        {/* Brand Header */}
         <View style={styles.brandContainer}>
-          <View style={[styles.logoIconBg, { backgroundColor: "rgba(25, 25, 112, 0.08)" }]}>
-            <Wallet size={36} color={colors.primary} />
+          <View style={[styles.logoIconBg, { backgroundColor: colors.primary }]}>
+            <Wallet size={30} color="#FFFFFF" strokeWidth={2.2} />
           </View>
-          <Text style={[styles.logoText, { color: colors.primary }]}>Tcha-Tcha</Text>
+          <Text style={[styles.logoText, { color: colors.text }]}>Tcha-Tcha</Text>
           <Text style={[styles.subtitle, { color: colors.muted }]}>
-            Gérez votre activité Mobile Money en toute simplicité
+            Espace Agent & Gérant Mobile Money
           </Text>
         </View>
 
-        {/* Card Form */}
-        <View style={[styles.cardForm, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.formHeading, { color: colors.text }]}>Connexion</Text>
-          
+        {/* Auth Card */}
+        <View style={[styles.cardForm, { backgroundColor: colors.card, borderColor: "#E2E8F0" }]}>
+          <Text style={[styles.formHeading, { color: colors.text, marginBottom: 20 }]}>Connexion</Text>
+
           <View style={styles.formFields}>
             {/* Phone Input */}
             <View>
-              <View style={styles.labelRow}>
-                <Phone size={14} color={colors.muted} />
-                <Text style={[styles.label, { color: colors.muted }]}>NUMÉRO DE TÉLÉPHONE</Text>
+              <View style={styles.labelHeader}>
+                <View style={styles.labelRow}>
+                  <Phone size={13} color={colors.muted} />
+                  <Text style={[styles.label, { color: colors.muted }]}>NUMÉRO DE TÉLÉPHONE</Text>
+                </View>
+                {detectedOperator && (
+                  <View
+                    style={[
+                      styles.opBadge,
+                      { backgroundColor: OPERATOR_STYLES[detectedOperator]?.bg ?? "#EEF2FF" },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.opBadgeText,
+                        { color: OPERATOR_STYLES[detectedOperator]?.text ?? colors.primary },
+                      ]}
+                    >
+                      {detectedOperator}
+                    </Text>
+                  </View>
+                )}
               </View>
-              <View style={[styles.phoneRow, { backgroundColor: colors.input, borderColor: colors.border }]}>
-                <Text style={[styles.prefix, { color: colors.primary }]}>🇧🇯 +229</Text>
+
+              <View
+                style={[
+                  styles.phoneRow,
+                  {
+                    backgroundColor: phoneFocused ? "#FFFFFF" : "#F8FAFC",
+                    borderColor: phoneFocused
+                      ? colors.primary
+                      : isPhoneValid
+                      ? "#16A34A"
+                      : "#E2E8F0",
+                  },
+                ]}
+              >
+                <View style={styles.countryPill}>
+                  <Text style={styles.countryCode}>BJ</Text>
+                  <View style={styles.countrySep} />
+                  <Text style={[styles.prefix, { color: colors.primary }]}>+229</Text>
+                </View>
+
                 <TextInput
-                  style={[styles.phoneInput, { color: colors.text, fontFamily: "Poppins_400Regular" }]}
-                  value={phone}
-                  onChangeText={(t) => setPhone(t.replace(/[^0-9]/g, ""))}
+                  style={[styles.phoneInput, { color: colors.text }]}
+                  value={formattedPhone}
+                  onChangeText={handlePhoneChange}
+                  onFocus={() => setPhoneFocused(true)}
+                  onBlur={() => setPhoneFocused(false)}
                   keyboardType="number-pad"
-                  placeholder="01 XX XX XX XX"
-                  placeholderTextColor={colors.muted}
-                  maxLength={10}
+                  placeholder="01 97 00 00 00"
+                  placeholderTextColor="#94A3B8"
+                  maxLength={14}
+                  returnKeyType="next"
+                  onSubmitEditing={() => setPinFocusKey((k) => k + 1)}
                 />
+
+                {isPhoneValid ? (
+                  <CheckCircle2 size={18} color="#16A34A" />
+                ) : phone.length > 0 ? (
+                  <TouchableOpacity
+                    onPress={() => setPhone("")}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityLabel="Effacer le numéro"
+                  >
+                    <X size={16} color="#94A3B8" />
+                  </TouchableOpacity>
+                ) : null}
               </View>
-              <Text style={styles.helperText}>Format : 10 chiffres (ex: 01 97 97 97 97)</Text>
+
+              <View style={styles.helperRow}>
+                <Text style={styles.helperText}>10 chiffres commençant par 01</Text>
+                <Text style={[styles.counterText, isPhoneValid && { color: "#16A34A" }]}>
+                  {phone.length}/10
+                </Text>
+              </View>
             </View>
 
             {/* PIN Input */}
             <View style={styles.pinSection}>
-              <View style={styles.labelRow}>
-                <Lock size={14} color={colors.muted} />
-                <Text style={[styles.label, { color: colors.muted }]}>CODE PIN (6 CHIFFRES)</Text>
+              <View style={styles.labelHeader}>
+                <View style={styles.labelRow}>
+                  <Lock size={13} color={colors.muted} />
+                  <Text style={[styles.label, { color: colors.muted }]}>CODE PIN (6 CHIFFRES)</Text>
+                </View>
+
+                <TouchableOpacity
+                  onPress={() => setShowPin((v) => !v)}
+                  style={styles.eyeToggle}
+                  activeOpacity={0.7}
+                >
+                  {showPin ? (
+                    <EyeOff size={14} color={colors.primary} />
+                  ) : (
+                    <Eye size={14} color={colors.muted} />
+                  )}
+                  <Text style={[styles.eyeToggleText, { color: showPin ? colors.primary : colors.muted }]}>
+                    {showPin ? "Masquer" : "Afficher"}
+                  </Text>
+                </TouchableOpacity>
               </View>
-              <PinInput value={pin} onChange={setPin} />
+
+              <PinInput value={pin} onChange={setPin} masked={!showPin} focusKey={pinFocusKey} />
+
+              <View style={styles.pinFooterRow}>
+                <TouchableOpacity onPress={() => router.push("/(auth)/forgot-pin")} style={styles.forgotLink}>
+                  <Text style={[styles.forgotText, { color: colors.primary }]}>Code PIN oublié ?</Text>
+                </TouchableOpacity>
+                <Text style={[styles.counterText, pin.length === 6 && { color: "#16A34A" }]}>
+                  {pin.length}/6
+                </Text>
+              </View>
             </View>
 
-            {/* Login button */}
+            {/* Login Button */}
             <TouchableOpacity
-              style={[styles.btn, { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1 }]}
+              style={[
+                styles.btn,
+                {
+                  backgroundColor: isFormReady ? colors.primary : "#94A3B8",
+                },
+              ]}
               onPress={handleLogin}
               disabled={loading}
+              activeOpacity={0.85}
             >
-              <Text style={[styles.btnText, { color: colors.accent }]}>
-                {loading ? "Connexion..." : "Se connecter"}
-              </Text>
+              {loading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Text style={styles.btnText}>Se connecter</Text>
+                  <ArrowRight size={18} color="#FFFFFF" strokeWidth={2.4} />
+                </>
+              )}
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Action Links */}
+        {/* Register Footer */}
         <View style={styles.linksContainer}>
-          <TouchableOpacity onPress={() => router.push("/(auth)/forgot-pin")} style={styles.linkTouch}>
-            <Text style={[styles.linkText, { color: colors.muted }]}>Code PIN oublié ?</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={() => router.push("/(auth)/register")} style={styles.linkTouch}>
-            <Text style={[styles.registerLinkText, { color: colors.primary }]}>
-              Pas encore de compte ? <Text style={{ fontFamily: "Poppins_700Bold", textDecorationLine: "underline" }}>Créer un compte</Text>
+          <TouchableOpacity onPress={() => router.push("/(auth)/register")} style={styles.registerBtn} activeOpacity={0.75}>
+            <Text style={[styles.registerLinkText, { color: colors.muted }]}>
+              Nouveau sur Tcha-Tcha ?{" "}
+              <Text style={{ color: colors.primary, fontFamily: "Poppins_700Bold" }}>
+                Créer un compte
+              </Text>
             </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
 
-      {/* Progress Modal */}
       <ProgressModal
         visible={showProgress}
         title="Connexion en cours"
@@ -234,55 +342,118 @@ export default function Login() {
 }
 
 const styles = StyleSheet.create({
-  container: { paddingHorizontal: 24, gap: 16, flexGrow: 1, justifyContent: "center" },
-  brandContainer: { alignItems: "center", marginBottom: 12, gap: 8 },
+  root: { flex: 1, backgroundColor: "#F8FAFC" },
+  container: { paddingHorizontal: 20, gap: 20, flexGrow: 1, justifyContent: "center" },
+  brandContainer: { alignItems: "center", gap: 6 },
   logoIconBg: {
-    width: 72,
-    height: 72,
-    borderRadius: 22,
+    width: 60,
+    height: 60,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 8,
+    marginBottom: 4,
+    shadowColor: "#191970",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 14,
+    elevation: 6,
   },
-  logoText: { fontSize: 26, fontFamily: "Poppins_800ExtraBold", letterSpacing: 0.5 },
-  subtitle: { textAlign: "center", fontSize: 13, fontFamily: "Poppins_400Regular", paddingHorizontal: 12, lineHeight: 18 },
-  
-  // Form Card
+  logoText: { fontSize: 26, fontFamily: "Poppins_700Bold", letterSpacing: -0.4 },
+  subtitle: { textAlign: "center", fontSize: 13, fontFamily: "Poppins_400Regular" },
+
   cardForm: {
     borderRadius: 24,
     borderWidth: 1,
-    padding: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
+    padding: 22,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.05,
+    shadowRadius: 20,
     elevation: 3,
   },
-  formHeading: { fontSize: 18, fontFamily: "Poppins_700Bold", marginBottom: 20 },
+  formHeading: { fontSize: 20, fontFamily: "Poppins_700Bold" },
+
   formFields: { gap: 20 },
-  labelRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 },
-  label: { fontSize: 10, fontFamily: "Poppins_700Bold", textTransform: "uppercase", letterSpacing: 0.5 },
-  
+  labelHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  labelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  label: { fontSize: 11, fontFamily: "Poppins_600SemiBold", letterSpacing: 0.6 },
+
+  opBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  opBadgeText: { fontSize: 11, fontFamily: "Poppins_700Bold" },
+
   phoneRow: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1.5,
-    height: 52,
-    paddingHorizontal: 16,
-    gap: 8,
+    height: 56,
+    paddingHorizontal: 12,
+    gap: 10,
   },
-  prefix: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
-  phoneInput: { flex: 1, fontSize: 15, height: "100%", fontFamily: "Poppins_600SemiBold" },
-  helperText: { fontSize: 10, fontFamily: "Poppins_400Regular", color: "#999", marginTop: 4, marginLeft: 2 },
+  countryPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EEF2FF",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 6,
+  },
+  countryCode: { fontSize: 11, fontFamily: "Poppins_700Bold", color: "#1E293B", letterSpacing: 0.5 },
+  countrySep: { width: 1, height: 12, backgroundColor: "#CBD5E1" },
+  prefix: { fontSize: 13, fontFamily: "Poppins_700Bold" },
+  phoneInput: {
+    flex: 1,
+    fontSize: 16,
+    height: "100%",
+    fontFamily: "Poppins_600SemiBold",
+    letterSpacing: 0.5,
+  },
+  helperRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 6,
+    paddingHorizontal: 2,
+  },
+  helperText: { fontSize: 11, fontFamily: "Poppins_400Regular", color: "#64748B" },
+  counterText: { fontSize: 11, fontFamily: "Poppins_600SemiBold", color: "#94A3B8" },
 
-  pinSection: { alignItems: "center", gap: 6, width: "100%" },
-  
-  btn: { height: 52, borderRadius: 14, alignItems: "center", justifyContent: "center", marginTop: 8 },
-  btnText: { fontSize: 15, fontFamily: "Poppins_700Bold" },
+  pinSection: { width: "100%", gap: 4 },
+  eyeToggle: { flexDirection: "row", alignItems: "center", gap: 5, paddingVertical: 2 },
+  eyeToggleText: { fontSize: 12, fontFamily: "Poppins_600SemiBold" },
+  pinFooterRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 8,
+    paddingHorizontal: 2,
+  },
+  forgotLink: { paddingVertical: 2 },
+  forgotText: { fontSize: 12, fontFamily: "Poppins_600SemiBold" },
 
-  linksContainer: { alignItems: "center", gap: 12, marginTop: 8 },
-  linkTouch: { padding: 4 },
-  linkText: { fontSize: 13, fontFamily: "Poppins_500Medium" },
-  registerLinkText: { fontSize: 13, fontFamily: "Poppins_500Medium" },
+  btn: {
+    height: 56,
+    borderRadius: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 4,
+    shadowColor: "#191970",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  btnText: { fontSize: 15, fontFamily: "Poppins_700Bold", color: "#FFFFFF" },
+
+  linksContainer: { alignItems: "center", marginTop: 4 },
+  registerBtn: { paddingVertical: 10, paddingHorizontal: 16 },
+  registerLinkText: { fontSize: 13, fontFamily: "Poppins_400Regular" },
 });

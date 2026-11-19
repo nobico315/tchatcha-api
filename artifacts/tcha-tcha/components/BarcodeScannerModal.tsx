@@ -58,7 +58,7 @@ export default function BarcodeScannerModal({
         ) : (
           <View style={[s.cameraBox, { borderColor: colors.border }]}>
             <CameraView
-              style={StyleSheet.absoluteFillObject}
+              style={StyleSheet.absoluteFill}
               facing="back"
               onBarcodeScanned={handleBarcodeScanned}
               barcodeScannerSettings={{ barcodeTypes: ["qr","ean13","ean8","upc_a","upc_e","code128","code39","code93","itf14","datamatrix","pdf417","aztec"] }}

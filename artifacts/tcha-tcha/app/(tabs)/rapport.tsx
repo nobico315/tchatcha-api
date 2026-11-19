@@ -50,8 +50,17 @@ type TabType = "stats" | "transactions" | "settings";
 export default function Rapport() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, getMyAgents } = useAuth();
   const { transactions } = useTransactions();
+  const [teamAgentIds, setTeamAgentIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (user?.role === "gerant") {
+      getMyAgents().then((agents) => {
+        setTeamAgentIds(new Set(agents.map((a) => a.id)));
+      });
+    }
+  }, [user?.role, getMyAgents]);
 
   // Navigation and Period tabs
   const [currentTab, setCurrentTab] = useState<TabType>("stats");
@@ -147,10 +156,14 @@ export default function Rapport() {
 
     return transactions.filter((tx) => {
       const txDate = new Date(tx.createdAt);
-      const matchUser = user ? tx.agentId === user.id : true;
+      const matchUser = !user
+        ? true
+        : user.role === "gerant"
+        ? teamAgentIds.has(tx.agentId) || tx.agentId === user.id
+        : tx.agentId === user.id;
       return txDate >= start && txDate <= end && matchUser;
     });
-  }, [transactions, period, startDateStr, endDateStr, user]);
+  }, [transactions, period, startDateStr, endDateStr, user, teamAgentIds]);
 
   // 2. Computed Metrics & Profit
   const reportStats = useMemo(() => {
@@ -283,16 +296,19 @@ export default function Rapport() {
     const updated: CommissionSettings = {
       useProgressiveGrid: commSettings.useProgressiveGrid,
       MTN: {
+        ...commSettings.MTN,
         depot: parseFloat(inputs.MTN_depot) || 0,
         retrait: parseFloat(inputs.MTN_retrait) || 0,
         vente: parseFloat(inputs.MTN_vente) || 0,
       },
       Moov: {
+        ...commSettings.Moov,
         depot: parseFloat(inputs.Moov_depot) || 0,
         retrait: parseFloat(inputs.Moov_retrait) || 0,
         vente: parseFloat(inputs.Moov_vente) || 0,
       },
       Celtis: {
+        ...commSettings.Celtis,
         depot: parseFloat(inputs.Celtis_depot) || 0,
         retrait: parseFloat(inputs.Celtis_retrait) || 0,
         vente: parseFloat(inputs.Celtis_vente) || 0,
@@ -344,10 +360,10 @@ export default function Rapport() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* HEADER SECTION */}
-      <View style={[styles.header, { paddingTop: topPad + 12, backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { paddingTop: topPad + 12, backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderBottomColor: "#E8E8F5" }]}>
         <View style={styles.headerRow}>
-          <Text style={[styles.heading, { color: colors.primary }]}>Rapports & Bénéfices</Text>
-          <TouchableOpacity onPress={handleExportPDF} style={[styles.pdfBtn, { backgroundColor: colors.primary }]}>
+          <Text style={[styles.heading, { color: "#000000" }]}>Rapports & Bénéfices</Text>
+          <TouchableOpacity onPress={handleExportPDF} style={[styles.pdfBtn, { backgroundColor: "#191970" }]}>
             <Download size={16} color="#FFFFFF" />
             <Text style={styles.pdfBtnText}>PDF</Text>
           </TouchableOpacity>
@@ -361,10 +377,12 @@ export default function Rapport() {
               onPress={() => setPeriod(p)}
               style={[
                 styles.periodTab, 
-                period === p && { backgroundColor: colors.primary, borderColor: colors.primary }
+                period === p 
+                  ? { backgroundColor: "#191970", borderColor: "#191970" }
+                  : { backgroundColor: "#FFFFFF", borderColor: "#E8E8F5" }
               ]}
             >
-              <Text style={[styles.periodTabText, { color: period === p ? "#FFFFFF" : colors.muted }]}>
+              <Text style={[styles.periodTabText, { color: period === p ? "#FFFFFF" : "#8E9AB4" }]}>
                 {p === "today" && "Aujourd'hui"}
                 {p === "yesterday" && "Hier"}
                 {p === "7days" && "7J"}
@@ -449,8 +467,8 @@ export default function Rapport() {
           {/* Main Profit Card (Gold Gradient) */}
           <LinearGradient colors={["#191970", "#0B0B3F"]} style={styles.profitBanner}>
             <View style={styles.profitBannerHeader}>
-              <View style={styles.profitIconWrapper}>
-                <Coins size={22} color="#FFD700" />
+              <View style={[styles.profitIconWrapper, { backgroundColor: "rgba(255,255,255,0.18)" }]}>
+                <Coins size={22} color="#FFFFFF" />
               </View>
               <Text style={styles.profitBannerLabel}>Bénéfice estimé ({periodLabel})</Text>
             </View>
@@ -574,7 +592,7 @@ export default function Rapport() {
               >
                 <TrendingUp size={16} color={commSettings.useProgressiveGrid ? "#FFFFFF" : colors.muted} />
                 <Text style={[styles.toggleBtnText, { color: commSettings.useProgressiveGrid ? "#FFFFFF" : colors.muted }]}>
-                  Grille progressive
+                  Barème agent
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity 
@@ -595,7 +613,7 @@ export default function Rapport() {
               <View style={[styles.infoBox, { backgroundColor: "rgba(25, 25, 112, 0.04)" }]}>
                 <HelpCircle size={16} color={colors.primary} />
                 <Text style={[styles.infoBoxText, { color: colors.muted }]}>
-                  Le mode grille calcule automatiquement vos commissions en fonction des tranches de montant officielles en vigueur au Bénin (MTN, Moov, Celtis).
+                  Le barème applique un gain fixe à l'agent pour chaque tranche de dépôt et de retrait.
                 </Text>
               </View>
             ) : (

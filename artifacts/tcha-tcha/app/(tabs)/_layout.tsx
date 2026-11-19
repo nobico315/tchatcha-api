@@ -1,11 +1,11 @@
-import { BarChart2, Home, List, Plus, User, Users, WifiOff } from "lucide-react-native";
+import { BarChart2, Home, List, Plus, User, Users } from "lucide-react-native";
 import { router, Tabs } from "expo-router";
 import React from "react";
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
-import { useTransactions } from "@/context/TransactionContext";
+import { useAndroidSmsSync } from "@/hooks/useAndroidSmsSync";
 
 function CustomTabBar({ state, descriptors, navigation }: any) {
   const colors = useColors();
@@ -19,7 +19,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 
   const labels: Record<string, string> = {
     index: "Accueil",
-    transactions: "Transactions",
+    transactions: "Activité",
     rapport: "Rapport",
     profile: "Profil",
     equipe: "Équipe",
@@ -42,7 +42,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
           return (
             <TouchableOpacity key="fab" style={styles.fabWrap} onPress={() => router.push("/new-transaction")} activeOpacity={0.85}>
               <View style={styles.fab}>
-                <Plus size={26} color="#FFD700" strokeWidth={2.5} />
+                <Plus size={26} color="#FFFFFF" strokeWidth={2.5} />
               </View>
             </TouchableOpacity>
           );
@@ -53,16 +53,21 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 
         const onPress = () => {
           if (tabIndex < 0) return;
-          const event = navigation.emit({ type: "tabPress", target: state.routes[tabIndex].key, canPreventDefault: true });
-          if (!isFocused && !event.defaultPrevented) {
-            navigation.navigate(state.routes[tabIndex].name);
+          const targetRoute = state.routes[tabIndex];
+          if (navigation?.emit) {
+            const event = navigation.emit({ type: "tabPress", target: targetRoute.key, canPreventDefault: true });
+            if (!isFocused && !event?.defaultPrevented) {
+              navigation.navigate(targetRoute.name);
+            }
+          } else if (!isFocused) {
+            router.navigate((routeName === "index" ? "/(tabs)" : `/(tabs)/${routeName}`) as any);
           }
         };
 
         return (
           <TouchableOpacity key={routeName} style={styles.tab} onPress={onPress} activeOpacity={0.7}>
             {icons[routeName]?.(isFocused)}
-            <Text style={[styles.tabLabel, { color: isFocused ? colors.primary : colors.muted, fontFamily: isFocused ? "Poppins_700Bold" : "Poppins_400Regular" }]}>
+            <Text numberOfLines={1} style={[styles.tabLabel, { color: isFocused ? colors.primary : colors.muted, fontFamily: isFocused ? "Poppins_700Bold" : "Poppins_400Regular" }]}>
               {labels[routeName]}
             </Text>
           </TouchableOpacity>
@@ -73,48 +78,12 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 }
 
 export default function TabsLayout() {
-  const { user, logout } = useAuth();
-  const colors = useColors();
-  const insets = useSafeAreaInsets();
-  const { isOnline } = useTransactions();
-
-  // Subscription expiry guard — only enforced when online
-  // Offline: the user can keep working; data stays local and syncs when they reconnect after renewing
-  const isSubExpired = isOnline && user && new Date(user.subscriptionExpiry) < new Date();
-
-  if (isSubExpired) {
-    return (
-      <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: (Platform.OS === "web" ? 67 : insets.top) + 24, paddingHorizontal: 28, paddingBottom: 40, alignItems: "center", justifyContent: "center", gap: 20 }}>
-        <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: "#fee2e2", alignItems: "center", justifyContent: "center" }}>
-          <Text style={{ fontSize: 40 }}>🔒</Text>
-        </View>
-        <Text style={{ fontSize: 22, fontFamily: "Poppins_700Bold", color: colors.primary, textAlign: "center" }}>
-          Abonnement expiré
-        </Text>
-        <Text style={{ fontSize: 14, fontFamily: "Poppins_400Regular", color: colors.muted, textAlign: "center", lineHeight: 22 }}>
-          Votre abonnement a expiré. Renouvelez-le pour continuer à utiliser Tcha-Tcha.
-        </Text>
-        <TouchableOpacity
-          style={{ width: "100%", height: 56, borderRadius: 14, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" }}
-          onPress={() => router.push("/abonnement")}
-        >
-          <Text style={{ fontSize: 16, fontFamily: "Poppins_700Bold", color: "#FFD700" }}>Renouveler mon abonnement</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={{ width: "100%", height: 52, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border, alignItems: "center", justifyContent: "center" }}
-          onPress={async () => { await logout(); router.replace("/(auth)/login"); }}
-        >
-          <Text style={{ fontSize: 14, fontFamily: "Poppins_600SemiBold", color: colors.muted }}>Se déconnecter</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
+  useAndroidSmsSync();
   return (
     <Tabs tabBar={(props) => <CustomTabBar {...props} />} screenOptions={{ headerShown: false }}>
       <Tabs.Screen name="index" />
       <Tabs.Screen name="transactions" />
-      <Tabs.Screen name="stock" />
+      <Tabs.Screen name="stock" options={{ href: null }} />
       <Tabs.Screen name="rapport" />
       <Tabs.Screen name="profile" />
       <Tabs.Screen name="equipe" />

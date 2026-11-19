@@ -1,40 +1,62 @@
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
-  Alert, KeyboardAvoidingView, Platform, ScrollView,
+  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView,
   StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PinInput } from "@/components/PinInput";
 import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { normalizeBeninPhone } from "@/utils/beninPhone";
 
 type Step = "phone" | "otp" | "newpin";
 
 export default function ForgotPin() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { updateUser } = useAuth();
+  const { user, requestPinReset, resetPinWithOtp } = useAuth();
   const [step, setStep] = useState<Step>("phone");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(user?.phone ? normalizeBeninPhone(user.phone) : "");
   const [otp, setOtp] = useState("");
   const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const stepTitles = { phone: "Numéro de téléphone", otp: "Code de vérification", newpin: "Nouveau code PIN" };
 
+  const fullPhone = `+22901${normalizeBeninPhone(phone)}`;
+
   const handleNext = async () => {
+    if (submitting) return;
     if (step === "phone") {
-      if (!phone) { Alert.alert("Erreur", "Saisissez votre numéro."); return; }
+      const digits = normalizeBeninPhone(phone);
+      if (digits.length !== 8) { Alert.alert("Erreur", "Saisissez un numéro béninois valide (8 chiffres après 01)."); return; }
+      setSubmitting(true);
+      const res = await requestPinReset(`+22901${digits}`);
+      setSubmitting(false);
+      if (!res.success) {
+        Alert.alert("Erreur", res.error || "Impossible d'envoyer le code.");
+        return;
+      }
+      if (res.devOtp) {
+        Alert.alert("Code de vérification (Dev)", `Votre code OTP est : ${res.devOtp}`);
+      }
       setStep("otp");
     } else if (step === "otp") {
-      if (otp.length < 6) { Alert.alert("Erreur", "Saisissez le code à 6 chiffres reçu par SMS."); return; }
+      if (otp.length < 6) { Alert.alert("Erreur", "Saisissez le code à 6 chiffres."); return; }
       setStep("newpin");
     } else {
       if (newPin.length < 6) { Alert.alert("Erreur", "Le code PIN doit être de 6 chiffres."); return; }
       if (newPin !== confirmPin) { Alert.alert("Erreur", "Les codes PIN ne correspondent pas."); return; }
-      await updateUser({ pin: newPin });
-      Alert.alert("Succès", "Votre code PIN a été modifié.", [{ text: "OK", onPress: () => router.replace("/(auth)/login") }]);
+      setSubmitting(true);
+      const res = await resetPinWithOtp(fullPhone, otp, newPin);
+      setSubmitting(false);
+      if (!res.success) {
+        Alert.alert("Erreur", res.error || "Impossible de modifier le code PIN.");
+        return;
+      }
+      Alert.alert("Succès", "Votre code PIN a été modifié.", [{ text: "OK", onPress: () => router.replace(user ? "/(tabs)/profile" : "/(auth)/login") }]);
     }
   };
 
@@ -51,7 +73,7 @@ export default function ForgotPin() {
           <View style={styles.form}>
             <Text style={[styles.hint, { color: colors.muted }]}>Entrez le numéro associé à votre compte.</Text>
             <View style={[styles.phoneRow, { backgroundColor: colors.input, borderColor: colors.border }]}>
-              <Text style={[styles.prefix, { color: colors.primary }]}>🇧🇯 +229</Text>
+              <Text style={[styles.prefix, { color: colors.primary }]}>BJ +229 01</Text>
               <TextInput
                 style={[styles.phoneInput, { color: colors.text, fontFamily: "Poppins_400Regular" }]}
                 value={phone}
@@ -59,7 +81,7 @@ export default function ForgotPin() {
                 keyboardType="number-pad"
                 placeholder="XX XX XX XX"
                 placeholderTextColor={colors.muted}
-                maxLength={8}
+                maxLength={10}
               />
             </View>
           </View>
@@ -85,8 +107,15 @@ export default function ForgotPin() {
           </View>
         )}
 
-        <TouchableOpacity style={[styles.btn, { backgroundColor: colors.primary }]} onPress={handleNext}>
-          <Text style={[styles.btnText, { color: colors.accent }]}>Continuer</Text>
+        <TouchableOpacity
+          style={[styles.btn, { backgroundColor: colors.primary, opacity: submitting ? 0.7 : 1, flexDirection: "row", gap: 8 }]}
+          onPress={handleNext}
+          disabled={submitting}
+        >
+          {submitting && <ActivityIndicator size="small" color="#FFFFFF" />}
+          <Text style={[styles.btnText, { color: "#FFFFFF" }]}>
+            {submitting ? "Chargement..." : "Continuer"}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>

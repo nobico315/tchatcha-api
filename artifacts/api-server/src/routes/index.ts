@@ -17,7 +17,7 @@ router.use("/agents", agentsRouter);
 router.use("/sessions", sessionsRouter);
 router.use("/transactions", transactionsRouter);
 router.use("/clients", clientsRouter);
-router.use("/products", productsRouter);
+// router.use("/products", productsRouter); // Désactivé (fonctionnalité stock masquée)
 router.use("/notifications", notificationsRouter);
 router.use(feexpayRouter);
 

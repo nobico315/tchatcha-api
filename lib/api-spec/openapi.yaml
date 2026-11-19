@@ -494,7 +494,7 @@ components:
           type: string
         type:
           type: string
-          enum: [depot, retrait, vente]
+          enum: [depot, retrait, vente, recharge]
         clientName:
           type: string
         clientPhone:
@@ -535,7 +535,7 @@ components:
           type: string
         type:
           type: string
-          enum: [depot, retrait, vente]
+          enum: [depot, retrait, vente, recharge]
         clientName:
           type: string
         clientPhone:

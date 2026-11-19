@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useState, useRef } from "react";
 import NetInfo from "@react-native-community/netinfo";
+import { isSubscriptionActive, useAuth } from "@/context/AuthContext";
 import {
   getProducts as apiGetProducts,
   createProduct as apiCreateProduct,
@@ -12,6 +13,7 @@ import {
   type Product,
   type ProductSale,
 } from "@workspace/api-client-react";
+import { offlineAccountStore } from "@/utils/offlineAccountStore";
 
 export type { Product, ProductSale };
 
@@ -62,47 +64,95 @@ function generateId(): string {
 }
 
 export function ProductProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
   const [products, setProducts] = useState<LocalProduct[]>([]);
   const [sales, setSales] = useState<LocalProductSale[]>([]);
+  const [loadedAccountId, setLoadedAccountId] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(true);
   const isSyncingRef = useRef(false);
+  const activeAccountIdRef = useRef<string | null>(user?.id ?? null);
+  activeAccountIdRef.current = user?.id ?? null;
+  const canSyncOnline = isOnline && isSubscriptionActive(user?.subscriptionExpiry);
+
+  const getStoredItem = useCallback(
+    (key: string) => user ? offlineAccountStore.getItem(user.id, key) : Promise.resolve(null),
+    [user?.id]
+  );
+
+  const setStoredItem = useCallback((key: string, value: string) => {
+    if (!user) return Promise.reject(new Error("Aucun compte connecté pour le stockage local."));
+    return offlineAccountStore.setItem(user.id, key, value);
+  }, [user?.id]);
 
   // ── Persist helpers ────────────────────────────────────────────────────────
   const saveProducts = async (data: LocalProduct[]) => {
-    await AsyncStorage.setItem(PRODUCTS_KEY, JSON.stringify(data));
-    setProducts(data);
+    await setStoredItem(PRODUCTS_KEY, JSON.stringify(data));
+    if (activeAccountIdRef.current === user?.id) setProducts(data);
   };
 
   const saveSales = async (data: LocalProductSale[]) => {
-    await AsyncStorage.setItem(SALES_KEY, JSON.stringify(data));
-    setSales(data);
+    await setStoredItem(SALES_KEY, JSON.stringify(data));
+    if (activeAccountIdRef.current === user?.id) setSales(data);
   };
 
   // ── Load on mount ──────────────────────────────────────────────────────────
   useEffect(() => {
-    (async () => {
-      const [p, s] = await Promise.all([
-        AsyncStorage.getItem(PRODUCTS_KEY),
-        AsyncStorage.getItem(SALES_KEY),
-      ]);
-      if (p) setProducts(JSON.parse(p));
-      if (s) setSales(JSON.parse(s));
-    })();
+    let cancelled = false;
+    setProducts([]);
+    setSales([]);
+    setLoadedAccountId(null);
+
+    if (user) {
+      const accountId = user.id;
+      const loadScopedList = async <T,>(key: string, belongsToAccount: (item: T) => boolean): Promise<T[]> => {
+        const scoped = await offlineAccountStore.getItem(accountId, key);
+        if (scoped !== null) return JSON.parse(scoped) as T[];
+        const legacy = await AsyncStorage.getItem(key);
+        if (!legacy) return [];
+        const legacyItems = JSON.parse(legacy) as T[];
+        const matching = legacyItems.filter(belongsToAccount);
+        if (matching.length > 0) {
+          await offlineAccountStore.setItem(accountId, key, JSON.stringify(matching));
+          const otherAccounts = legacyItems.filter((item) => !belongsToAccount(item));
+          if (otherAccounts.length > 0) {
+            await AsyncStorage.setItem(key, JSON.stringify(otherAccounts));
+          } else {
+            await AsyncStorage.removeItem(key);
+          }
+        }
+        return matching;
+      };
+
+      void Promise.all([
+        loadScopedList<LocalProduct>(PRODUCTS_KEY, (product) => product.agentId === accountId),
+        loadScopedList<LocalProductSale>(SALES_KEY, (sale) => sale.agentId === accountId),
+      ]).then(([loadedProducts, loadedSales]) => {
+        if (cancelled) return;
+        setProducts(loadedProducts);
+        setSales(loadedSales);
+        setLoadedAccountId(accountId);
+      }).catch((error) => {
+        console.error("[ProductContext] Échec du chargement du coffre local :", error);
+      });
+    }
 
     const unsub = NetInfo.addEventListener((state) => {
       setIsOnline(!!state.isConnected);
     });
-    return () => unsub();
-  }, []);
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, [user?.id]);
 
   // ── Background sync when online ────────────────────────────────────────────
   const syncAll = useCallback(async () => {
-    if (isSyncingRef.current || !isOnline) return;
+    if (isSyncingRef.current || !canSyncOnline || !user || loadedAccountId !== user.id || !isSubscriptionActive(user.subscriptionExpiry)) return;
     isSyncingRef.current = true;
 
     try {
       // 0. Flush pending product deletions
-      const delRaw = await AsyncStorage.getItem(PENDING_DEL_KEY);
+      const delRaw = await getStoredItem(PENDING_DEL_KEY);
       const delQueue: string[] = delRaw ? JSON.parse(delRaw) : [];
       if (delQueue.length > 0) {
         const remaining: string[] = [];
@@ -113,11 +163,11 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
             if ((e?.status ?? e?.statusCode) !== 404) remaining.push(id);
           }
         }
-        await AsyncStorage.setItem(PENDING_DEL_KEY, JSON.stringify(remaining));
+        await setStoredItem(PENDING_DEL_KEY, JSON.stringify(remaining));
       }
 
       // 1. Sync pending / pending_update products
-      const localProducts: LocalProduct[] = JSON.parse(await AsyncStorage.getItem(PRODUCTS_KEY) ?? "[]");
+      const localProducts: LocalProduct[] = JSON.parse(await getStoredItem(PRODUCTS_KEY) ?? "[]");
       let changed = false;
       for (const p of localProducts) {
         if (p.syncStatus === "pending") {
@@ -170,7 +220,7 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
       } catch { /* keep local */ }
 
       // 3. Sync pending sales
-      const localSales: LocalProductSale[] = JSON.parse(await AsyncStorage.getItem(SALES_KEY) ?? "[]");
+      const localSales: LocalProductSale[] = JSON.parse(await getStoredItem(SALES_KEY) ?? "[]");
       let salesChanged = false;
       for (const sale of localSales) {
         if (sale.syncStatus === "pending") {
@@ -214,10 +264,10 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
     } finally {
       isSyncingRef.current = false;
     }
-  }, [isOnline]);
+  }, [canSyncOnline, getStoredItem, loadedAccountId, setStoredItem, user?.id, user?.subscriptionExpiry]);
 
   useEffect(() => {
-    if (isOnline) {
+    if (canSyncOnline && isSubscriptionActive(user?.subscriptionExpiry)) {
       syncAll();
       const interval = setInterval(syncAll, 30000);
       return () => clearInterval(interval);
@@ -226,9 +276,10 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
 
   // ── Products CRUD ──────────────────────────────────────────────────────────
   const addProduct = useCallback(async (data: Omit<Product, "id" | "agentId" | "createdAt" | "updatedAt">): Promise<LocalProduct> => {
+    if (!user || loadedAccountId !== user.id) throw new Error("Le stockage local du compte n’est pas encore prêt.");
     const localProduct: LocalProduct = {
       id: generateId(),
-      agentId: "",
+      agentId: user?.id ?? "",
       name: data.name,
       barcode: data.barcode ?? null,
       price: data.price,
@@ -240,10 +291,10 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
       syncStatus: "pending",
     };
 
-    const stored: LocalProduct[] = JSON.parse(await AsyncStorage.getItem(PRODUCTS_KEY) ?? "[]");
+    const stored: LocalProduct[] = JSON.parse(await getStoredItem(PRODUCTS_KEY) ?? "[]");
     await saveProducts([localProduct, ...stored]);
 
-    if (isOnline) {
+    if (canSyncOnline) {
       try {
         const serverProduct = await apiCreateProduct({
           name: data.name,
@@ -254,17 +305,18 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
           description: data.description ?? undefined,
         });
         const synced: LocalProduct = { ...serverProduct, barcode: serverProduct.barcode ?? null, stock: serverProduct.stock ?? null, category: serverProduct.category ?? null, description: serverProduct.description ?? null, syncStatus: "synced" };
-        const latest: LocalProduct[] = JSON.parse(await AsyncStorage.getItem(PRODUCTS_KEY) ?? "[]");
+        const latest: LocalProduct[] = JSON.parse(await getStoredItem(PRODUCTS_KEY) ?? "[]");
         await saveProducts(latest.map((p) => p.id === localProduct.id ? synced : p));
         return synced;
       } catch { /* keep pending */ }
     }
 
     return localProduct;
-  }, [isOnline]);
+  }, [canSyncOnline, getStoredItem, loadedAccountId, user?.id, user?.subscriptionExpiry]);
 
   const editProduct = useCallback(async (id: string, data: Partial<Omit<Product, "id" | "agentId">>) => {
-    const stored: LocalProduct[] = JSON.parse(await AsyncStorage.getItem(PRODUCTS_KEY) ?? "[]");
+    if (!user || loadedAccountId !== user.id) throw new Error("Le stockage local du compte n’est pas encore prêt.");
+    const stored: LocalProduct[] = JSON.parse(await getStoredItem(PRODUCTS_KEY) ?? "[]");
     const original = stored.find((p) => p.id === id);
     if (!original) return;
 
@@ -272,40 +324,60 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
     const updated = stored.map((p) => p.id === id ? { ...p, ...data, updatedAt: new Date().toISOString(), syncStatus: newSyncStatus as LocalProduct["syncStatus"] } : p);
     await saveProducts(updated);
 
-    if (isOnline) {
+    if (canSyncOnline && isSubscriptionActive(user?.subscriptionExpiry)) {
       try {
         const serverProduct = await apiUpdateProduct(id, data);
-        const latest: LocalProduct[] = JSON.parse(await AsyncStorage.getItem(PRODUCTS_KEY) ?? "[]");
+        const latest: LocalProduct[] = JSON.parse(await getStoredItem(PRODUCTS_KEY) ?? "[]");
         await saveProducts(latest.map((p) => p.id === id ? { ...serverProduct, barcode: serverProduct.barcode ?? null, stock: serverProduct.stock ?? null, category: serverProduct.category ?? null, description: serverProduct.description ?? null, syncStatus: "synced" as const } : p));
       } catch { /* keep pending_update */ }
     }
-  }, [isOnline]);
+  }, [canSyncOnline, getStoredItem, loadedAccountId, user?.id, user?.subscriptionExpiry]);
 
   const removeProduct = useCallback(async (id: string) => {
-    const stored: LocalProduct[] = JSON.parse(await AsyncStorage.getItem(PRODUCTS_KEY) ?? "[]");
-    await saveProducts(stored.filter((p) => p.id !== id));
+    if (!user || loadedAccountId !== user.id) throw new Error("Le stockage local du compte n’est pas encore prêt.");
+    await offlineAccountStore.updateItem(user.id, PENDING_DEL_KEY, (value) => {
+      const queue: string[] = value ? JSON.parse(value) : [];
+      return JSON.stringify(queue.includes(id) ? queue : [...queue, id]);
+    });
 
-    if (isOnline) {
-      try { await apiDeleteProduct(id); } catch {}
-    } else {
-      const delRaw = await AsyncStorage.getItem(PENDING_DEL_KEY);
-      const queue: string[] = delRaw ? JSON.parse(delRaw) : [];
-      if (!queue.includes(id)) {
-        await AsyncStorage.setItem(PENDING_DEL_KEY, JSON.stringify([...queue, id]));
+    const stored = await offlineAccountStore.updateItem(user.id, PRODUCTS_KEY, (value) => {
+      const products: LocalProduct[] = value ? JSON.parse(value) : [];
+      return JSON.stringify(products.filter((product) => product.id !== id));
+    });
+    if (activeAccountIdRef.current === user.id) setProducts(stored ? JSON.parse(stored) : []);
+
+    if (canSyncOnline && isSubscriptionActive(user?.subscriptionExpiry)) {
+      let deletionConfirmed = false;
+      try {
+        await apiDeleteProduct(id);
+        deletionConfirmed = true;
+      } catch (error: any) {
+        const status = error?.status ?? error?.statusCode;
+        deletionConfirmed = status === 404;
+        if (!deletionConfirmed) console.warn(`[PRODUCT] Delete sync failed; queued for retry: ${id}`, error?.message);
+      }
+      if (deletionConfirmed) {
+        await offlineAccountStore.updateItem(user.id, PENDING_DEL_KEY, (value) => {
+          const queue: string[] = value ? JSON.parse(value) : [];
+          const remaining = queue.filter((queuedId) => queuedId !== id);
+          return remaining.length ? JSON.stringify(remaining) : null;
+        });
       }
     }
-  }, [isOnline]);
+  }, [canSyncOnline, loadedAccountId, user?.id, user?.subscriptionExpiry]);
 
   const searchProductByBarcode = useCallback((barcode: string): LocalProduct | null => {
+    if (loadedAccountId !== user?.id) return null;
     return products.find((p) => p.barcode === barcode) ?? null;
-  }, [products]);
+  }, [loadedAccountId, products, user?.id]);
 
   const findProductByBarcode = useCallback(async (barcode: string): Promise<LocalProduct | null> => {
     const cleaned = barcode.trim();
     if (!cleaned) return null;
+    if (loadedAccountId !== user?.id) return null;
     const local = products.find((p) => p.barcode === cleaned);
     if (local) return local;
-    if (!isOnline) return null;
+    if (!canSyncOnline || !isSubscriptionActive(user?.subscriptionExpiry)) return null;
 
     try {
       const serverProduct = await apiGetProductByBarcode(cleaned);
@@ -317,16 +389,17 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
         description: serverProduct.description ?? null,
         syncStatus: "synced",
       };
-      const stored: LocalProduct[] = JSON.parse(await AsyncStorage.getItem(PRODUCTS_KEY) ?? "[]");
+      const stored: LocalProduct[] = JSON.parse(await getStoredItem(PRODUCTS_KEY) ?? "[]");
       const merged = [normalized, ...stored.filter((p) => p.id !== normalized.id)];
       await saveProducts(merged);
       return normalized;
     } catch {
       return null;
     }
-  }, [isOnline, products]);
+  }, [canSyncOnline, getStoredItem, loadedAccountId, products, user?.id, user?.subscriptionExpiry]);
 
   const searchProducts = useCallback((query: string): LocalProduct[] => {
+    if (loadedAccountId !== user?.id) return [];
     const q = query.toLowerCase().trim();
     if (!q) return products;
     return products.filter((p) =>
@@ -334,7 +407,7 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
       (p.barcode && p.barcode.includes(q)) ||
       (p.category && p.category.toLowerCase().includes(q))
     );
-  }, [products]);
+  }, [loadedAccountId, products, user?.id]);
 
   // ── Sales ──────────────────────────────────────────────────────────────────
   const recordSale = useCallback(async (data: {
@@ -346,9 +419,10 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
     barcode?: string | null;
     note?: string | null;
   }): Promise<LocalProductSale> => {
+    if (!user || loadedAccountId !== user.id) throw new Error("Le stockage local du compte n’est pas encore prêt.");
     const localSale: LocalProductSale = {
       id: generateId(),
-      agentId: "",
+      agentId: user?.id ?? "",
       productId: data.productId ?? null,
       productName: data.productName,
       unitPrice: data.unitPrice,
@@ -360,12 +434,12 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
       syncStatus: "pending",
     };
 
-    const stored: LocalProductSale[] = JSON.parse(await AsyncStorage.getItem(SALES_KEY) ?? "[]");
+    const stored: LocalProductSale[] = JSON.parse(await getStoredItem(SALES_KEY) ?? "[]");
     await saveSales([localSale, ...stored]);
 
     // Decrement local stock if product linked
     if (data.productId) {
-      const prods: LocalProduct[] = JSON.parse(await AsyncStorage.getItem(PRODUCTS_KEY) ?? "[]");
+      const prods: LocalProduct[] = JSON.parse(await getStoredItem(PRODUCTS_KEY) ?? "[]");
       await saveProducts(prods.map((p) =>
         p.id === data.productId && p.stock !== null
           ? { ...p, stock: Math.max(0, (p.stock ?? 0) - data.quantity) }
@@ -373,7 +447,7 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
       ));
     }
 
-    if (isOnline) {
+    if (canSyncOnline && isSubscriptionActive(user?.subscriptionExpiry)) {
       try {
         const serverSale = await apiCreateProductSale({
           id: localSale.id,
@@ -381,19 +455,20 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
           createdAt: localSale.createdAt,
         });
         const synced: LocalProductSale = { ...serverSale, barcode: serverSale.barcode ?? null, note: serverSale.note ?? null, productId: serverSale.productId ?? null, syncStatus: "synced" };
-        const latest: LocalProductSale[] = JSON.parse(await AsyncStorage.getItem(SALES_KEY) ?? "[]");
+        const latest: LocalProductSale[] = JSON.parse(await getStoredItem(SALES_KEY) ?? "[]");
         await saveSales(latest.map((s) => s.id === localSale.id ? synced : s));
         return synced;
       } catch { /* keep pending */ }
     }
 
     return localSale;
-  }, [isOnline, products]);
+  }, [canSyncOnline, getStoredItem, loadedAccountId, products, user?.id, user?.subscriptionExpiry]);
 
   const getTodaySales = useCallback((): LocalProductSale[] => {
+    if (loadedAccountId !== user?.id) return [];
     const today = new Date().toISOString().split("T")[0];
     return sales.filter((s) => s.createdAt.startsWith(today));
-  }, [sales]);
+  }, [loadedAccountId, sales, user?.id]);
 
   const getSalesTotalToday = useCallback((): number => {
     return getTodaySales().reduce((sum, s) => sum + s.totalPrice, 0);
@@ -405,7 +480,9 @@ export function ProductProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <ProductContext.Provider value={{
-      products, sales, isOnline,
+      products: loadedAccountId === user?.id ? products : [],
+      sales: loadedAccountId === user?.id ? sales : [],
+      isOnline,
       addProduct, editProduct, removeProduct, searchProductByBarcode, findProductByBarcode, searchProducts,
       recordSale, getTodaySales, getSalesTotalToday, refreshProducts,
     }}>

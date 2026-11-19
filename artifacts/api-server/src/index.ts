@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { autoClosePastSessions } from "./routes/sessions";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +23,10 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  // Clôture automatique à 23h59 et vérification des sessions passées chaque minute
+  autoClosePastSessions().catch((e) => logger.warn({ err: e }, "Initial autoClosePastSessions failed"));
+  setInterval(() => {
+    autoClosePastSessions().catch((e) => logger.warn({ err: e }, "Periodic autoClosePastSessions failed"));
+  }, 60000);
 });

@@ -291,7 +291,7 @@ export async function exportReportToPDF(data: ReportData): Promise<void> {
                 <span class="meta-label">Période :</span> ${data.periodLabel}
               </div>
               <div class="meta-item">
-                <span class="meta-label">Mode de calcul :</span> ${data.commissionSettings.useProgressiveGrid ? "Grille progressive officielle" : "Pourcentages personnalisés"}
+                <span class="meta-label">Mode de calcul :</span> ${data.commissionSettings.useProgressiveGrid ? "Barème agent par tranche" : "Pourcentages personnalisés"}
               </div>
               <div class="meta-item" style="text-align: right;">
                 <span class="meta-label">Généré le :</span> ${formatDateTime(new Date().toISOString())}

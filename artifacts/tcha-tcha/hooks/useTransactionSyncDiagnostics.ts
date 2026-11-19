@@ -45,7 +45,7 @@ export function useTransactionSyncDiagnostics(): SyncDiagnostics {
  */
 export function logTransactionDiagnostics() {
   // Note: Can only be used inside a component
-  if (typeof window !== "undefined" || typeof global !== "undefined") {
+  if (typeof window !== "undefined" || typeof globalThis !== "undefined") {
     const { useTransactions } = require("@/context/TransactionContext");
     try {
       const { transactions, isOnline } = useTransactions() as any;

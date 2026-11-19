@@ -40,7 +40,7 @@ router.get("/", requireAuth, async (req, res): Promise<void> => {
 router.get("/barcode/:barcode", requireAuth, async (req, res): Promise<void> => {
   const authReq = req as AuthenticatedRequest;
   const user = authReq.user!;
-  const { barcode } = req.params;
+  const barcode = req.params.barcode as string;
   try {
     const [product] = await db
       .select()
@@ -130,7 +130,7 @@ router.post("/", requireAuth, async (req, res): Promise<void> => {
 router.put("/:id", requireAuth, async (req, res): Promise<void> => {
   const authReq = req as AuthenticatedRequest;
   const user = authReq.user!;
-  const { id } = req.params;
+  const id = req.params.id as string;
   const { name, barcode, price, stock, category, description } = req.body;
 
   try {
@@ -172,7 +172,7 @@ router.put("/:id", requireAuth, async (req, res): Promise<void> => {
 router.delete("/:id", requireAuth, async (req, res): Promise<void> => {
   const authReq = req as AuthenticatedRequest;
   const user = authReq.user!;
-  const { id } = req.params;
+  const id = req.params.id as string;
   try {
     const [product] = await db.select().from(productsTable).where(eq(productsTable.id, id)).limit(1);
     if (!product || product.agentId !== user.id) {

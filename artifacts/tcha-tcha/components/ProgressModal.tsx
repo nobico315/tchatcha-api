@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { X, CheckCircle, AlertCircle } from "lucide-react-native";
+import { X, CheckCircle2, AlertCircle } from "lucide-react-native";
 
 export type ProgressStatus = "pending" | "loading" | "success" | "error";
 
@@ -36,15 +36,13 @@ export function ProgressModal({
   visible,
   title,
   steps,
-  currentStep,
   errorMessage,
   onCancel,
   onRetry,
-  backgroundColor = "#ffffff",
-  primaryColor = "#000000",
-  textColor = "#000000",
-  mutedColor = "#999999",
-  accentColor = "#ffffff",
+  backgroundColor = "#FFFFFF",
+  primaryColor = "#191970",
+  textColor = "#0F172A",
+  mutedColor = "#94A3B8",
 }: ProgressModalProps) {
   const isError = steps.some((s) => s.status === "error");
   const isComplete = steps.every((s) => s.status === "success");
@@ -52,138 +50,106 @@ export function ProgressModal({
   const getStepIcon = (step: ProgressStep) => {
     switch (step.status) {
       case "success":
-        return <CheckCircle size={20} color={primaryColor} />;
+        return <CheckCircle2 size={20} color="#16A34A" />;
       case "error":
-        return <AlertCircle size={20} color="#ef4444" />;
+        return <AlertCircle size={20} color="#DC2626" />;
       case "loading":
         return <ActivityIndicator size="small" color={primaryColor} />;
       case "pending":
-        return (
-          <View
-            style={{
-              width: 20,
-              height: 20,
-              borderRadius: 10,
-              borderWidth: 2,
-              borderColor: mutedColor,
-            }}
-          />
-        );
+        return <View style={[styles.pendingDot, { borderColor: "#CBD5E1" }]} />;
     }
   };
 
   const getStepColor = (step: ProgressStep) => {
     switch (step.status) {
       case "success":
-        return primaryColor;
+        return "#15803D";
       case "error":
-        return "#ef4444";
+        return "#DC2626";
       case "loading":
-        return primaryColor;
+        return textColor;
       case "pending":
         return mutedColor;
     }
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onCancel}
-    >
-      <View style={[styles.overlay, { backgroundColor: "rgba(0,0,0,0.5)" }]}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.overlay}>
         <View style={[styles.modal, { backgroundColor }]}>
-          {/* Header avec titre et bouton fermer */}
+          {/* Header */}
           <View style={styles.header}>
             <Text style={[styles.title, { color: textColor }]}>{title}</Text>
             {isError && onCancel && (
-              <TouchableOpacity onPress={onCancel}>
-                <X size={24} color={textColor} />
+              <TouchableOpacity
+                onPress={onCancel}
+                style={styles.closeIconBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={20} color="#64748B" />
               </TouchableOpacity>
             )}
           </View>
 
-          {/* Liste des étapes */}
+          {/* Steps */}
           <View style={styles.stepsContainer}>
-            {steps.map((step, index) => (
-              <View key={step.id}>
-                <View style={styles.step}>
+            {steps.map((step) => {
+              const isActive = step.status === "loading";
+              return (
+                <View
+                  key={step.id}
+                  style={[
+                    styles.stepRow,
+                    isActive && { backgroundColor: "#F8FAFC", borderColor: "#E2E8F0" },
+                    step.status === "error" && { backgroundColor: "#FEF2F2", borderColor: "#FECACA" },
+                  ]}
+                >
                   <View style={styles.stepIcon}>{getStepIcon(step)}</View>
-                  <Text
-                    style={[
-                      styles.stepLabel,
-                      { color: getStepColor(step) },
-                    ]}
-                  >
+                  <Text style={[styles.stepLabel, { color: getStepColor(step) }]}>
                     {step.label}
                   </Text>
                 </View>
-                {index < steps.length - 1 && (
-                  <View
-                    style={[
-                      styles.stepConnector,
-                      {
-                        backgroundColor:
-                          step.status === "success" ? primaryColor : mutedColor,
-                      },
-                    ]}
-                  />
-                )}
-              </View>
-            ))}
+              );
+            })}
           </View>
 
-          {/* Message d'erreur */}
+          {/* Error box */}
           {isError && errorMessage && (
-            <View style={[styles.errorBox, { backgroundColor: "#fee2e2" }]}>
-              <Text style={[styles.errorText, { color: "#991b1b" }]}>
-                {errorMessage}
-              </Text>
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{errorMessage}</Text>
             </View>
           )}
 
-          {/* Boutons d'action */}
-          <View style={styles.actions}>
-            {isError && onRetry && (
-              <TouchableOpacity
-                style={[styles.button, { backgroundColor: primaryColor }]}
-                onPress={onRetry}
-              >
-                <Text style={[styles.buttonText, { color: accentColor }]}>
-                  Réessayer
-                </Text>
-              </TouchableOpacity>
-            )}
-            {isError && onCancel && (
-              <TouchableOpacity
-                style={[
-                  styles.button,
-                  { backgroundColor: "transparent", borderWidth: 1, borderColor: primaryColor },
-                ]}
-                onPress={onCancel}
-              >
-                <Text style={[styles.buttonText, { color: primaryColor }]}>
-                  Annuler
-                </Text>
-              </TouchableOpacity>
-            )}
-            {isComplete && (
-              <TouchableOpacity
-                style={[styles.button, { backgroundColor: primaryColor }]}
-                onPress={onCancel}
-              >
-                <Text style={[styles.buttonText, { color: accentColor }]}>
-                  Fermer
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Spinner central si en cours */}
-          {!isError && !isComplete && (
-            <View style={styles.spinner}>
-              <ActivityIndicator size="large" color={primaryColor} />
+          {/* Actions */}
+          {(isError || isComplete) && (
+            <View style={styles.actions}>
+              {isError && onCancel && (
+                <TouchableOpacity
+                  style={[styles.button, styles.secondaryButton]}
+                  onPress={onCancel}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.secondaryButtonText}>Annuler</Text>
+                </TouchableOpacity>
+              )}
+              {isError && onRetry && (
+                <TouchableOpacity
+                  style={[styles.button, { backgroundColor: primaryColor }]}
+                  onPress={onRetry}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.primaryButtonText}>Réessayer</Text>
+                </TouchableOpacity>
+              )}
+              {isComplete && onCancel && (
+                <TouchableOpacity
+                  style={[styles.button, { backgroundColor: primaryColor }]}
+                  onPress={onCancel}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.primaryButtonText}>Continuer</Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
         </View>
@@ -195,80 +161,107 @@ export function ProgressModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.55)",
     justifyContent: "center",
     alignItems: "center",
+    padding: 24,
   },
   modal: {
-    borderRadius: 16,
-    padding: 24,
-    width: "85%",
-    maxWidth: 400,
+    borderRadius: 24,
+    padding: 22,
+    width: "100%",
+    maxWidth: 380,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 8,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 16,
   },
   title: {
-    fontSize: 18,
+    fontSize: 17,
     fontFamily: "Poppins_700Bold",
   },
-  stepsContainer: {
-    marginVertical: 16,
+  closeIconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  step: {
+  stepsContainer: {
+    gap: 8,
+  },
+  stepRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "transparent",
   },
   stepIcon: {
-    width: 24,
-    height: 24,
+    width: 22,
+    height: 22,
     justifyContent: "center",
     alignItems: "center",
+  },
+  pendingDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 2,
   },
   stepLabel: {
     flex: 1,
-    fontFamily: "Poppins_500Medium",
-    fontSize: 14,
-  },
-  stepConnector: {
-    width: 2,
-    height: 16,
-    marginLeft: 11,
-    alignSelf: "flex-start",
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 13,
   },
   errorBox: {
-    borderRadius: 8,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    borderRadius: 12,
     padding: 12,
-    marginVertical: 12,
+    marginTop: 14,
   },
   errorText: {
     fontFamily: "Poppins_400Regular",
-    fontSize: 13,
+    fontSize: 12,
+    color: "#991B1B",
     lineHeight: 18,
-  },
-  spinner: {
-    paddingVertical: 16,
-    justifyContent: "center",
-    alignItems: "center",
   },
   actions: {
     flexDirection: "row",
-    gap: 12,
-    marginTop: 20,
+    gap: 10,
+    marginTop: 18,
   },
   button: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
+    height: 48,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
   },
-  buttonText: {
+  primaryButtonText: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 14,
+    color: "#FFFFFF",
+  },
+  secondaryButton: {
+    backgroundColor: "#F1F5F9",
+  },
+  secondaryButtonText: {
     fontFamily: "Poppins_600SemiBold",
     fontSize: 14,
+    color: "#334155",
   },
 });

@@ -1,4 +1,8 @@
 import { Router } from "express";
+import { randomBytes } from "crypto";
+import { db, usersTable, notificationsTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
+import { requireAuth, type AuthenticatedRequest } from "../middlewares/authMiddleware";
 
 const router = Router();
 
@@ -117,6 +121,89 @@ router.get("/feexpay/verify", async (req, res) => {
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: "Internal error", details: String(err) });
+  }
+});
+
+router.post("/feexpay/confirm", requireAuth, async (req, res): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
+  const user = authReq.user!;
+  const reference = typeof req.body?.reference === "string" ? req.body.reference.trim() : "";
+
+  if (!reference) {
+    res.status(400).json({ success: false, error: "Référence de paiement manquante." });
+    return;
+  }
+
+  if (!FEEXPAY_TOKEN) {
+    res.status(500).json({ success: false, error: "Configuration FeexPay manquante sur le serveur." });
+    return;
+  }
+
+  try {
+    const apiUrl = `https://api-v2.feexpay.me/api/transactions/public/single/status/${encodeURIComponent(reference)}`;
+    const r = await fetch(apiUrl, {
+      headers: { Authorization: `Bearer ${FEEXPAY_TOKEN}` },
+    });
+
+    if (!r.ok) {
+      res.status(400).json({ success: false, error: "Impossible de vérifier le paiement auprès de FeexPay." });
+      return;
+    }
+
+    const data = await r.json() as Record<string, unknown>;
+    const paymentStatus = String(
+      data.status ?? data.payment_status ?? data.statusCode ?? data.reason ?? ""
+    ).toUpperCase();
+
+    if (paymentStatus !== "SUCCESSFUL" && paymentStatus !== "SUCCESS") {
+      res.status(400).json({ success: false, error: "Le paiement n'a pas encore été confirmé." });
+      return;
+    }
+
+    const now = new Date();
+    const baseDate = user.subscriptionExpiry > now ? new Date(user.subscriptionExpiry) : now;
+    const newExpiry = new Date(baseDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    await db
+      .update(usersTable)
+      .set({ subscriptionExpiry: newExpiry })
+      .where(eq(usersTable.id, user.id));
+
+    await db.insert(notificationsTable).values({
+      id: randomBytes(12).toString("hex"),
+      userId: user.id,
+      type: "subscription_renewed",
+      title: "Abonnement renouvelé",
+      body: `Votre abonnement est actif jusqu'au ${newExpiry.toLocaleDateString("fr-FR")}.`,
+    });
+
+    if (user.role === "gerant") {
+      const agents = await db
+        .select({ id: usersTable.id })
+        .from(usersTable)
+        .where(and(eq(usersTable.role, "agent"), eq(usersTable.managerId, user.id)));
+
+      if (agents.length > 0) {
+        await db
+          .update(usersTable)
+          .set({ subscriptionExpiry: newExpiry })
+          .where(and(eq(usersTable.role, "agent"), eq(usersTable.managerId, user.id)));
+
+        for (const agent of agents) {
+          await db.insert(notificationsTable).values({
+            id: randomBytes(12).toString("hex"),
+            userId: agent.id,
+            type: "subscription_renewed",
+            title: "Abonnement renouvelé par votre gérant",
+            body: `Votre abonnement a été prolongé jusqu'au ${newExpiry.toLocaleDateString("fr-FR")}.`,
+          });
+        }
+      }
+    }
+
+    res.json({ success: true, subscriptionExpiry: newExpiry.toISOString() });
+  } catch (err) {
+    res.status(500).json({ success: false, error: "Erreur lors de la confirmation du paiement.", details: String(err) });
   }
 });
 

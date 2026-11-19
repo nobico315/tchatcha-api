@@ -108,6 +108,7 @@ export const TransactionType = {
   depot: 'depot',
   retrait: 'retrait',
   vente: 'vente',
+  recharge: 'recharge',
 } as const;
 
 export type TransactionOperator = typeof TransactionOperator[keyof typeof TransactionOperator];
@@ -135,6 +136,7 @@ export interface Transaction {
   amount: number;
   operator: TransactionOperator;
   note?: string | null;
+  paid?: boolean;
   savedClient: boolean;
   saleMode?: TransactionSaleMode;
   agentId: string;
@@ -148,6 +150,7 @@ export const TransactionCreateRequestType = {
   depot: 'depot',
   retrait: 'retrait',
   vente: 'vente',
+  recharge: 'recharge',
 } as const;
 
 export type TransactionCreateRequestOperator = typeof TransactionCreateRequestOperator[keyof typeof TransactionCreateRequestOperator];
@@ -175,6 +178,7 @@ export interface TransactionCreateRequest {
   amount: number;
   operator: TransactionCreateRequestOperator;
   note?: string;
+  paid?: boolean;
   savedClient: boolean;
   saleMode?: TransactionCreateRequestSaleMode;
   createdAt: string;
@@ -187,6 +191,7 @@ export const TransactionUpdateRequestType = {
   depot: 'depot',
   retrait: 'retrait',
   vente: 'vente',
+  recharge: 'recharge',
 } as const;
 
 export type TransactionUpdateRequestOperator = typeof TransactionUpdateRequestOperator[keyof typeof TransactionUpdateRequestOperator];
@@ -213,6 +218,7 @@ export interface TransactionUpdateRequest {
   amount?: number;
   operator?: TransactionUpdateRequestOperator;
   note?: string;
+  paid?: boolean;
   savedClient?: boolean;
   saleMode?: TransactionUpdateRequestSaleMode;
 }

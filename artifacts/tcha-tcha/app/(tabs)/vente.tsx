@@ -235,18 +235,20 @@ export default function VentePage() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       {/* ── Header ── */}
-      <LinearGradient colors={["#191970", "#0B0B3F"]} style={[styles.header, { paddingTop: topPad + 12 }]}>
+      <LinearGradient colors={["#191970", "#0d0d5c", "#0B0B3F"]} style={[styles.header, { paddingTop: topPad + 12 }]}>
+        <View style={styles.bubbleDecorative1} />
+        <View style={styles.bubbleDecorative2} />
         <View style={styles.headerTop}>
           <View>
-            <Text style={styles.headerTitle}>Ventes</Text>
-            <Text style={styles.headerSub}>Catalogue & caisse rapide</Text>
+            <Text style={styles.headerTitle}>Caisse & Ventes</Text>
+            <Text style={styles.headerSub}>Gestion catalogue & ventes directes</Text>
           </View>
           <View style={styles.headerActions}>
             <TouchableOpacity style={styles.headerBtn} onPress={() => setScannerVisible(true)}>
-              <Camera size={20} color="#FFD700" />
+              <Camera size={18} color="#FFD700" />
             </TouchableOpacity>
             <TouchableOpacity style={styles.headerBtn} onPress={() => setSheetMode("new-product")}>
-              <Plus size={20} color="#FFD700" />
+              <Plus size={18} color="#FFD700" />
             </TouchableOpacity>
           </View>
         </View>
@@ -266,18 +268,40 @@ export default function VentePage() {
       <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
         {/* ── Quick Actions ── */}
         <View style={styles.quickSection}>
-          <TouchableOpacity style={[styles.quickCard, { backgroundColor: "#191970" }]} onPress={() => { resetSaleForm(); setSheetMode("sale"); }}>
-            <View style={styles.quickIcon}><ShoppingCart size={22} color="#FFD700" /></View>
-            <Text style={styles.quickLabel}>Vente rapide</Text>
-            <Text style={styles.quickSub}>Sans catalogue</Text>
+          <TouchableOpacity
+            style={styles.quickCardPrimary}
+            onPress={() => { resetSaleForm(); setSheetMode("sale"); }}
+            activeOpacity={0.85}
+          >
+            <LinearGradient colors={["#191970", "#0d0d5c"]} style={styles.quickCardGradient}>
+              <View style={styles.quickIconPrimary}>
+                <ShoppingCart size={20} color="#FFD700" />
+              </View>
+              <Text style={styles.quickLabelPrimary}>Vente rapide</Text>
+              <Text style={styles.quickSubPrimary}>Enregistrement express</Text>
+            </LinearGradient>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.quickCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]} onPress={() => setScannerVisible(true)}>
-            <View style={[styles.quickIcon, { backgroundColor: "rgba(25,25,112,0.08)" }]}><Barcode size={22} color="#191970" /></View>
+
+          <TouchableOpacity
+            style={[styles.quickCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => setScannerVisible(true)}
+            activeOpacity={0.75}
+          >
+            <View style={[styles.quickIcon, { backgroundColor: "rgba(25,25,112,0.08)" }]}>
+              <Barcode size={20} color="#191970" />
+            </View>
             <Text style={[styles.quickLabel, { color: colors.text }]}>Scanner Vente</Text>
-            <Text style={[styles.quickSub, { color: colors.muted }]}>Scan direct caisse</Text>
+            <Text style={[styles.quickSub, { color: colors.muted }]}>Scan code-barres</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.quickCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]} onPress={() => setSheetMode("catalog")}>
-            <View style={[styles.quickIcon, { backgroundColor: "rgba(25,25,112,0.08)" }]}><Archive size={22} color="#191970" /></View>
+
+          <TouchableOpacity
+            style={[styles.quickCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => setSheetMode("catalog")}
+            activeOpacity={0.75}
+          >
+            <View style={[styles.quickIcon, { backgroundColor: "rgba(25,25,112,0.08)" }]}>
+              <Archive size={20} color="#191970" />
+            </View>
             <Text style={[styles.quickLabel, { color: colors.text }]}>Catalogue</Text>
             <Text style={[styles.quickSub, { color: colors.muted }]}>{products.length} produit{products.length !== 1 ? "s" : ""}</Text>
           </TouchableOpacity>
@@ -354,231 +378,243 @@ export default function VentePage() {
 
       {/* Catalog Modal */}
       <Modal visible={sheetMode === "catalog"} transparent animationType="slide" onRequestClose={closeSheet}>
-        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={closeSheet} />
-        <View style={[styles.sheet, styles.sheetTall, { backgroundColor: colors.background, paddingBottom: (Platform.OS === "web" ? 20 : insets.bottom) + 20 }]}>
-          <View style={styles.sheetHandle} />
-          <View style={styles.sheetHeaderRow}>
-            <Text style={[styles.sheetTitle, { color: colors.primary }]}>Catalogue</Text>
-            <View style={{ flexDirection: "row", gap: 10 }}>
-              <TouchableOpacity
-                style={[styles.addBtn, { backgroundColor: colors.primary }]}
-                onPress={() => { resetProductForm(); setSheetMode("new-product"); }}
-              >
-                <Plus size={16} color="#FFD700" />
-                <Text style={{ color: "#FFD700", fontSize: 13, fontFamily: "Poppins_600SemiBold" }}>Ajouter</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={closeSheet}><X size={22} color={colors.muted} /></TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={[styles.phoneRow, { backgroundColor: colors.input, borderColor: colors.border, marginBottom: 12 }]}>
-            <Search size={16} color={colors.muted} />
-            <TextInput
-              style={[styles.phoneInput, { color: colors.text }]}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Rechercher un produit..."
-              placeholderTextColor={colors.muted}
-            />
-          </View>
-
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {filteredProducts.length === 0 ? (
-              <View style={{ alignItems: "center", padding: 30, gap: 8 }}>
-                <Package size={40} color={colors.muted} />
-                <Text style={{ color: colors.muted, fontFamily: "Poppins_400Regular" }}>
-                  {searchQuery ? "Aucun produit trouvé" : "Catalogue vide"}
-                </Text>
+        <View style={styles.modalContainer}>
+          <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={closeSheet} />
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.keyboardView}
+          >
+            <View style={[styles.sheet, styles.sheetTall, { backgroundColor: colors.background, paddingBottom: (Platform.OS === "web" ? 20 : insets.bottom) + 20 }]}>
+              <View style={styles.sheetHandle} />
+              <View style={styles.sheetHeaderRow}>
+                <Text style={[styles.sheetTitle, { color: colors.primary }]}>Catalogue</Text>
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <TouchableOpacity
+                    style={[styles.addBtn, { backgroundColor: colors.primary }]}
+                    onPress={() => { resetProductForm(); setSheetMode("new-product"); }}
+                  >
+                    <Plus size={16} color="#FFD700" />
+                    <Text style={{ color: "#FFD700", fontSize: 13, fontFamily: "Poppins_600SemiBold" }}>Ajouter</Text>
+                  </TouchableOpacity>
+                   <TouchableOpacity onPress={closeSheet} style={styles.closeBtn}><X size={18} color={colors.muted} /></TouchableOpacity>
+                </View>
               </View>
-            ) : (
-              filteredProducts.map((product) => (
-                <ProductRow
-                  key={product.id}
-                  product={product}
-                  colors={colors}
-                  onPress={() => openSaleForProduct(product)}
-                  onEdit={() => openEdit(product)}
-                  onDelete={() => handleDeleteProduct(product)}
+
+              <View style={[styles.phoneRow, { backgroundColor: colors.input, borderColor: colors.border, marginBottom: 12 }]}>
+                <Search size={16} color={colors.muted} />
+                <TextInput
+                  style={[styles.phoneInput, { color: colors.text }]}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder="Rechercher un produit..."
+                  placeholderTextColor={colors.muted}
                 />
-              ))
-            )}
-          </ScrollView>
+              </View>
+
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                {filteredProducts.length === 0 ? (
+                  <View style={{ alignItems: "center", padding: 30, gap: 8 }}>
+                    <Package size={40} color={colors.muted} />
+                    <Text style={{ color: colors.muted, fontFamily: "Poppins_400Regular" }}>
+                      {searchQuery ? "Aucun produit trouvé" : "Catalogue vide"}
+                    </Text>
+                  </View>
+                ) : (
+                  filteredProducts.map((product) => (
+                    <ProductRow
+                      key={product.id}
+                      product={product}
+                      colors={colors}
+                      onPress={() => openSaleForProduct(product)}
+                      onEdit={() => openEdit(product)}
+                      onDelete={() => handleDeleteProduct(product)}
+                    />
+                  ))
+                )}
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
       {/* New / Edit Product Modal */}
       <Modal visible={sheetMode === "new-product" || sheetMode === "edit-product"} transparent animationType="slide" onRequestClose={closeSheet}>
-        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={closeSheet} />
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, justifyContent: "flex-end" }}>
-          <View style={[styles.sheet, styles.sheetTall, { backgroundColor: colors.background, paddingBottom: (Platform.OS === "web" ? 20 : insets.bottom) + 20 }]}>
-            <View style={styles.sheetHandle} />
-            <View style={styles.sheetHeaderRow}>
-              <Text style={[styles.sheetTitle, { color: colors.primary }]}>
-                {editingProduct ? "Modifier le produit" : "Ajouter au catalogue"}
-              </Text>
-              <TouchableOpacity onPress={closeSheet}><X size={22} color={colors.muted} /></TouchableOpacity>
-            </View>
+        <View style={styles.modalContainer}>
+          <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={closeSheet} />
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.keyboardView}
+          >
+            <View style={[styles.sheet, styles.sheetTall, { backgroundColor: colors.background, paddingBottom: (Platform.OS === "web" ? 20 : insets.bottom) + 20 }]}>
+              <View style={styles.sheetHandle} />
+              <View style={styles.sheetHeaderRow}>
+                <Text style={[styles.sheetTitle, { color: colors.primary }]}>
+                  {editingProduct ? "Modifier le produit" : "Ajouter au catalogue"}
+                </Text>
+                <TouchableOpacity onPress={closeSheet} style={styles.closeBtn}><X size={18} color={colors.muted} /></TouchableOpacity>
+              </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <View style={{ gap: 14 }}>
-                <View>
-                  <FieldLabel label="NOM DU PRODUIT" colors={colors} required />
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                <View style={{ gap: 14 }}>
+                  <View>
+                    <FieldLabel label="NOM DU PRODUIT" colors={colors} required />
+                    <TextInput
+                      style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+                      value={productName}
+                      onChangeText={setProductName}
+                      placeholder="Ex: Coca-Cola 33cl, Pain..."
+                      placeholderTextColor={colors.muted}
+                    />
+                  </View>
+
+                  <View style={{ flexDirection: "row", gap: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <FieldLabel label="PRIX (FCFA)" colors={colors} required />
+                      <TextInput
+                        style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+                        value={productPrice}
+                        onChangeText={(t) => setProductPrice(t.replace(/[^0-9]/g, ""))}
+                        placeholder="Ex: 500"
+                        placeholderTextColor={colors.muted}
+                        keyboardType="number-pad"
+                      />
+                    </View>
+                  </View>
+
+                  <FieldLabel label="CODE-BARRES (optionnel)" colors={colors} />
+                  <View style={[styles.phoneRow, { backgroundColor: colors.input, borderColor: colors.border }]}>
+                    <Barcode size={16} color={colors.primary} />
+                    <TextInput
+                      style={[styles.phoneInput, { color: colors.text }]}
+                      value={productBarcode}
+                      onChangeText={setProductBarcode}
+                      placeholder="Ex: 6414202001231"
+                      placeholderTextColor={colors.muted}
+                      keyboardType="default"
+                    />
+                  </View>
+
+                  <FieldLabel label="CATÉGORIE (optionnel)" colors={colors} />
                   <TextInput
                     style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
-                    value={productName}
-                    onChangeText={setProductName}
-                    placeholder="Ex: Coca-Cola 33cl, Pain..."
+                    value={productCategory}
+                    onChangeText={setProductCategory}
+                    placeholder="Ex: Boissons, Alimentation..."
                     placeholderTextColor={colors.muted}
                   />
+
+                  <TouchableOpacity
+                    style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1, marginTop: 8 }]}
+                    onPress={handleSaveProduct}
+                    disabled={loading}
+                  >
+                    <Text style={[styles.submitBtnText, { color: "#FFD700" }]}>
+                      {loading ? "Enregistrement..." : editingProduct ? "Enregistrer les modifications" : "Ajouter au catalogue"}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-
-                <View style={{ flexDirection: "row", gap: 12 }}>
-                  <View style={{ flex: 1 }}>
-                    <FieldLabel label="PRIX (FCFA)" colors={colors} required />
-                    <TextInput
-                      style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
-                      value={productPrice}
-                      onChangeText={(t) => setProductPrice(t.replace(/[^0-9]/g, ""))}
-                      placeholder="Ex: 500"
-                      placeholderTextColor={colors.muted}
-                      keyboardType="number-pad"
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <FieldLabel label="STOCK INITIAL (opt.)" colors={colors} />
-                    <TextInput
-                      style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
-                      value={productStock}
-                      onChangeText={(t) => setProductStock(t.replace(/[^0-9]/g, ""))}
-                      placeholder="Ex: 10"
-                      placeholderTextColor={colors.muted}
-                      keyboardType="number-pad"
-                    />
-                  </View>
-                </View>
-
-                <FieldLabel label="CODE-BARRES (optionnel)" colors={colors} />
-                <View style={[styles.phoneRow, { backgroundColor: colors.input, borderColor: colors.border }]}>
-                  <Barcode size={16} color={colors.primary} />
-                  <TextInput
-                    style={[styles.phoneInput, { color: colors.text }]}
-                    value={productBarcode}
-                    onChangeText={setProductBarcode}
-                    placeholder="Ex: 6414202001231"
-                    placeholderTextColor={colors.muted}
-                    keyboardType="default"
-                  />
-                </View>
-
-                <FieldLabel label="CATÉGORIE (optionnel)" colors={colors} />
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
-                  value={productCategory}
-                  onChangeText={setProductCategory}
-                  placeholder="Ex: Boissons, Alimentation..."
-                  placeholderTextColor={colors.muted}
-                />
-
-                <TouchableOpacity
-                  style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1, marginTop: 8 }]}
-                  onPress={handleSaveProduct}
-                  disabled={loading}
-                >
-                  <Text style={[styles.submitBtnText, { color: "#FFD700" }]}>
-                    {loading ? "Enregistrement..." : editingProduct ? "Enregistrer les modifications" : "Ajouter au catalogue"}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
+              </ScrollView>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
 
       {/* Sale Modal standard */}
       <Modal visible={sheetMode === "sale"} transparent animationType="slide" onRequestClose={closeSheet}>
-        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={closeSheet} />
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
-          <View style={[styles.sheet, { backgroundColor: colors.background, paddingBottom: (Platform.OS === "web" ? 20 : insets.bottom) + 20 }]}>
-            <View style={styles.sheetHandle} />
-            <View style={styles.sheetHeaderRow}>
-              <Text style={[styles.sheetTitle, { color: colors.primary }]}>Enregistrer une vente</Text>
-              <TouchableOpacity onPress={closeSheet}><X size={22} color={colors.muted} /></TouchableOpacity>
-            </View>
-
-            {selectedProduct && (
-              <View style={[styles.selectedProductBadge, { backgroundColor: "rgba(25,25,112,0.07)", borderColor: colors.primary }]}>
-                <Tag size={14} color={colors.primary} />
-                <Text style={{ color: colors.primary, fontFamily: "Poppins_600SemiBold", fontSize: 13, flex: 1, marginLeft: 6 }} numberOfLines={1}>
-                  {selectedProduct.name}
-                </Text>
-                <TouchableOpacity onPress={() => { setSelectedProduct(null); setSaleProductName(""); setSalePrice(""); }}>
-                  <X size={14} color={colors.muted} />
-                </TouchableOpacity>
+        <View style={styles.modalContainer}>
+          <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={closeSheet} />
+          <KeyboardAvoidingView 
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.keyboardView}
+          >
+            <View style={[styles.sheet, { backgroundColor: colors.background, paddingBottom: (Platform.OS === "web" ? 20 : insets.bottom) + 20 }]}>
+              <View style={styles.sheetHandle} />
+              <View style={styles.sheetHeaderRow}>
+                <Text style={[styles.sheetTitle, { color: colors.primary }]}>Enregistrer une vente</Text>
+                <TouchableOpacity onPress={closeSheet} style={styles.closeBtn}><X size={18} color={colors.muted} /></TouchableOpacity>
               </View>
-            )}
 
-            <FieldLabel label="PRODUIT" colors={colors} required />
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
-              value={saleProductName}
-              onChangeText={(t) => { setSaleProductName(t); if (selectedProduct) setSelectedProduct(null); }}
-              placeholder="Nom du produit vendu"
-              placeholderTextColor={colors.muted}
-            />
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                <View style={{ gap: 14, paddingTop: 4 }}>
+                  {selectedProduct && (
+                    <View style={[styles.selectedProductBadge, { backgroundColor: "rgba(25,25,112,0.07)", borderColor: colors.primary }]}>
+                      <Tag size={14} color={colors.primary} />
+                      <Text style={{ color: colors.primary, fontFamily: "Poppins_600SemiBold", fontSize: 13, flex: 1, marginLeft: 6 }} numberOfLines={1}>
+                        {selectedProduct.name}
+                      </Text>
+                      <TouchableOpacity onPress={() => { setSelectedProduct(null); setSaleProductName(""); setSalePrice(""); }}>
+                        <X size={14} color={colors.muted} />
+                      </TouchableOpacity>
+                    </View>
+                  )}
 
-            <View style={{ flexDirection: "row", gap: 12 }}>
-              <View style={{ flex: 1 }}>
-                <FieldLabel label="PRIX UNITAIRE (FCFA)" colors={colors} required />
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
-                  value={salePrice}
-                  onChangeText={(t) => setSalePrice(t.replace(/[^0-9]/g, ""))}
-                  placeholder="500"
-                  placeholderTextColor={colors.muted}
-                  keyboardType="number-pad"
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <FieldLabel label="QUANTITÉ" colors={colors} required />
-                <View style={[styles.qtyRow, { backgroundColor: colors.input, borderColor: colors.border }]}>
-                  <TouchableOpacity style={styles.qtyBtn} onPress={() => setSaleQty((q) => Math.max(1, parseInt(q, 10) - 1).toString())}>
-                    <Text style={[styles.qtyBtnText, { color: colors.primary }]}>−</Text>
-                  </TouchableOpacity>
-                  <TextInput
-                    style={[styles.qtyInput, { color: colors.text }]}
-                    value={saleQty}
-                    onChangeText={(t) => setSaleQty(t.replace(/[^0-9]/g, "") || "1")}
-                    keyboardType="number-pad"
-                    textAlign="center"
-                  />
-                  <TouchableOpacity style={styles.qtyBtn} onPress={() => setSaleQty((q) => (parseInt(q, 10) + 1).toString())}>
-                    <Text style={[styles.qtyBtnText, { color: colors.primary }]}>+</Text>
+                  <View>
+                    <FieldLabel label="PRODUIT" colors={colors} required />
+                    <TextInput
+                      style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+                      value={saleProductName}
+                      onChangeText={(t) => { setSaleProductName(t); if (selectedProduct) setSelectedProduct(null); }}
+                      placeholder="Nom du produit vendu"
+                      placeholderTextColor={colors.muted}
+                    />
+                  </View>
+
+                  <View style={{ flexDirection: "row", gap: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <FieldLabel label="PRIX UNITAIRE (FCFA)" colors={colors} required />
+                      <TextInput
+                        style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.text }]}
+                        value={salePrice}
+                        onChangeText={(t) => setSalePrice(t.replace(/[^0-9]/g, ""))}
+                        placeholder="500"
+                        placeholderTextColor={colors.muted}
+                        keyboardType="number-pad"
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <FieldLabel label="QUANTITÉ" colors={colors} required />
+                      <View style={[styles.qtyRow, { backgroundColor: colors.input, borderColor: colors.border }]}>
+                        <TouchableOpacity style={styles.qtyBtn} onPress={() => setSaleQty((q) => Math.max(1, parseInt(q, 10) - 1).toString())}>
+                          <Text style={[styles.qtyBtnText, { color: colors.primary }]}>−</Text>
+                        </TouchableOpacity>
+                        <TextInput
+                          style={[styles.qtyInput, { color: colors.text }]}
+                          value={saleQty}
+                          onChangeText={(t) => setSaleQty(t.replace(/[^0-9]/g, "") || "1")}
+                          keyboardType="number-pad"
+                          textAlign="center"
+                        />
+                        <TouchableOpacity style={styles.qtyBtn} onPress={() => setSaleQty((q) => (parseInt(q, 10) + 1).toString())}>
+                          <Text style={[styles.qtyBtnText, { color: colors.primary }]}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+
+                  {saleTotal > 0 && (
+                    <View style={[styles.totalBadge, { backgroundColor: "rgba(25,25,112,0.05)", borderColor: colors.primary, borderWidth: 1 }]}>
+                      <Text style={{ color: colors.muted, fontFamily: "Poppins_600SemiBold", fontSize: 14 }}>Total :</Text>
+                      <Text style={{ color: colors.primary, fontFamily: "Poppins_700Bold", fontSize: 18 }}>
+                        {formatAmount(saleTotal)} FCFA
+                      </Text>
+                    </View>
+                  )}
+
+                  <TouchableOpacity
+                    style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1 }]}
+                    onPress={handleRecordSale}
+                    disabled={loading}
+                  >
+                    <ShoppingCart size={18} color="#FFD700" />
+                    <Text style={[styles.submitBtnText, { color: "#FFD700", marginLeft: 8 }]}>
+                      {loading ? "Enregistrement..." : "Enregistrer la vente"}
+                    </Text>
                   </TouchableOpacity>
                 </View>
-              </View>
+              </ScrollView>
             </View>
-
-            {saleTotal > 0 && (
-              <View style={[styles.totalBadge, { backgroundColor: "rgba(25,25,112,0.05)", borderColor: colors.primary, borderWidth: 1 }]}>
-                <Text style={{ color: colors.muted, fontFamily: "Poppins_600SemiBold", fontSize: 14 }}>Total :</Text>
-                <Text style={{ color: colors.primary, fontFamily: "Poppins_700Bold", fontSize: 18 }}>
-                  {formatAmount(saleTotal)} FCFA
-                </Text>
-              </View>
-            )}
-
-            <TouchableOpacity
-              style={[styles.submitBtn, { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1 }]}
-              onPress={handleRecordSale}
-              disabled={loading}
-            >
-              <ShoppingCart size={18} color="#FFD700" />
-              <Text style={[styles.submitBtnText, { color: "#FFD700", marginLeft: 8 }]}>
-                {loading ? "Enregistrement..." : "Enregistrer la vente"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
     </View>
   );
@@ -607,28 +643,39 @@ function ProductRow({
   onDelete: () => void;
 }) {
   return (
-    <View style={[styles.productCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <TouchableOpacity style={styles.productCardMain} onPress={onPress}>
+    <View
+      style={[
+        styles.productCard,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+          borderLeftColor: colors.primary,
+        },
+      ]}
+    >
+      <TouchableOpacity style={styles.productCardMain} onPress={onPress} activeOpacity={0.75}>
         <View style={[styles.productIcon, { backgroundColor: "rgba(25,25,112,0.08)" }]}>
           <Package size={18} color="#191970" />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.productName, { color: colors.text }]} numberOfLines={1}>{product.name}</Text>
-          <View style={{ flexDirection: "row", gap: 8, marginTop: 2, flexWrap: "wrap" }}>
+          <Text style={[styles.productName, { color: colors.text }]} numberOfLines={1}>
+            {product.name}
+          </Text>
+          <View style={{ flexDirection: "row", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
             {product.category && (
-              <Text style={[styles.productTag, { color: colors.muted }]}>{product.category}</Text>
+              <View style={styles.tagPill}>
+                <Text style={styles.tagPillText}>{product.category}</Text>
+              </View>
             )}
             {product.barcode && (
               <Text style={[styles.productTag, { color: colors.muted }]}>#{product.barcode}</Text>
             )}
-            {product.stock !== null && product.stock !== undefined && (
-              <Text style={[styles.productTag, { color: product.stock <= 5 ? "#ef4444" : colors.muted }]}>
-                Stock: {product.stock}
-              </Text>
-            )}
           </View>
         </View>
-        <Text style={[styles.productPrice, { color: colors.primary }]}>{formatAmount(product.price)}<Text style={{ fontSize: 11 }}> F</Text></Text>
+        <Text style={[styles.productPrice, { color: colors.primary }]}>
+          {formatAmount(product.price)}
+          <Text style={{ fontSize: 11, fontFamily: "Poppins_600SemiBold" }}> FCFA</Text>
+        </Text>
       </TouchableOpacity>
       <View style={styles.productActions}>
         <TouchableOpacity style={styles.productActionBtn} onPress={onEdit}>
@@ -644,19 +691,30 @@ function ProductRow({
 
 function SaleRow({ sale, colors }: { sale: LocalProductSale; colors: any }) {
   return (
-    <View style={[styles.saleCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <View style={[styles.saleIconWrap, { backgroundColor: "rgba(26,122,74,0.1)" }]}>
-        <ShoppingCart size={16} color="#1a7a4a" />
+    <View
+      style={[
+        styles.saleCard,
+        {
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+          borderLeftColor: "#16a34a",
+        },
+      ]}
+    >
+      <View style={[styles.saleIconWrap, { backgroundColor: "rgba(22,163,74,0.1)" }]}>
+        <ShoppingCart size={16} color="#16a34a" />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[styles.saleName, { color: colors.text }]} numberOfLines={1}>{sale.productName}</Text>
+        <Text style={[styles.saleName, { color: colors.text }]} numberOfLines={1}>
+          {sale.productName}
+        </Text>
         <Text style={[styles.saleMeta, { color: colors.muted }]}>
           {sale.quantity}× {formatAmount(sale.unitPrice)} F • {formatTime(sale.createdAt)}
         </Text>
       </View>
       <View style={{ alignItems: "flex-end" }}>
-        <Text style={[styles.saleTotal, { color: "#1a7a4a" }]}>{formatAmount(sale.totalPrice)}</Text>
-        <Text style={{ color: colors.muted, fontSize: 10, fontFamily: "Poppins_400Regular" }}>FCFA</Text>
+        <Text style={[styles.saleTotal, { color: "#16a34a" }]}>+{formatAmount(sale.totalPrice)}</Text>
+        <Text style={{ color: colors.accent, fontSize: 10, fontFamily: "Poppins_600SemiBold" }}>FCFA</Text>
       </View>
     </View>
   );
@@ -664,63 +722,102 @@ function SaleRow({ sale, colors }: { sale: LocalProductSale; colors: any }) {
 
 const styles = StyleSheet.create({
   // Header
-  header: { paddingHorizontal: 20, paddingBottom: 20 },
+  header: { paddingHorizontal: 20, paddingBottom: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, position: "relative", overflow: "hidden" },
+  bubbleDecorative1: {
+    position: "absolute",
+    top: -40,
+    right: -40,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: "rgba(255, 215, 0, 0.08)",
+  },
+  bubbleDecorative2: {
+    position: "absolute",
+    bottom: -30,
+    left: -30,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+  },
   headerTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  headerTitle: { fontSize: 26, fontFamily: "Poppins_700Bold", color: "#FFFFFF" },
-  headerSub: { fontSize: 13, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.6)", marginTop: 2 },
+  headerTitle: { fontSize: 24, fontFamily: "Poppins_700Bold", color: "#FFFFFF", letterSpacing: -0.3 },
+  headerSub: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.7)", marginTop: 2 },
   headerActions: { flexDirection: "row", gap: 10 },
-  headerBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,215,0,0.15)", alignItems: "center", justifyContent: "center" },
+  headerBtn: { width: 42, height: 42, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.12)", borderWidth: 1, borderColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" },
   headerStats: { flexDirection: "row", gap: 10, marginTop: 16 },
-  statPill: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
-  statPillText: { color: "rgba(255,255,255,0.85)", fontFamily: "Poppins_600SemiBold", fontSize: 12 },
-  statPillBig: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,215,0,0.2)", borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6 },
+  statPill: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 },
+  statPillText: { color: "#FFFFFF", fontFamily: "Poppins_600SemiBold", fontSize: 12 },
+  statPillBig: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,215,0,0.2)", borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 },
   statPillBigText: { color: "#FFD700", fontFamily: "Poppins_700Bold", fontSize: 13 },
 
   // Quick actions
-  quickSection: { flexDirection: "row", gap: 12, paddingHorizontal: 20, paddingTop: 20 },
-  quickCard: { flex: 1, borderRadius: 16, padding: 14, gap: 6, minHeight: 100, justifyContent: "center" },
-  quickIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,215,0,0.15)", marginBottom: 2 },
-  quickLabel: { fontSize: 13, fontFamily: "Poppins_700Bold", color: "#FFFFFF" },
-  quickSub: { fontSize: 11, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.65)" },
+  quickSection: { flexDirection: "row", gap: 10, paddingHorizontal: 20, paddingTop: 20 },
+  quickCardPrimary: { flex: 1, borderRadius: 16, overflow: "hidden", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
+  quickCardGradient: { padding: 14, gap: 6, minHeight: 105, justifyContent: "center" },
+  quickIconPrimary: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,215,0,0.2)", marginBottom: 2 },
+  quickLabelPrimary: { fontSize: 13, fontFamily: "Poppins_700Bold", color: "#FFFFFF" },
+  quickSubPrimary: { fontSize: 11, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.7)" },
+
+  quickCard: { flex: 1, borderRadius: 16, borderWidth: 1.5, padding: 14, gap: 6, minHeight: 105, justifyContent: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
+  quickIcon: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center", marginBottom: 2 },
+  quickLabel: { fontSize: 13, fontFamily: "Poppins_700Bold" },
+  quickSub: { fontSize: 11, fontFamily: "Poppins_400Regular" },
 
   // Section
   sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   sectionTitle: { fontSize: 18, fontFamily: "Poppins_700Bold" },
 
   // Empty
-  emptyBox: { borderRadius: 16, borderWidth: 1, padding: 28, alignItems: "center", gap: 10 },
+  emptyBox: { borderRadius: 16, borderWidth: 1.5, padding: 28, alignItems: "center", gap: 10 },
   emptyText: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },
 
   // Product card
-  productCard: { flexDirection: "row", borderRadius: 14, borderWidth: 1, marginBottom: 10, overflow: "hidden" },
-  productCardMain: { flex: 1, flexDirection: "row", alignItems: "center", padding: 12, gap: 10 },
-  productIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-  productName: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
+  productCard: { flexDirection: "row", borderRadius: 16, borderWidth: 1, borderLeftWidth: 4, marginBottom: 10, overflow: "hidden", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
+  productCardMain: { flex: 1, flexDirection: "row", alignItems: "center", padding: 14, gap: 12 },
+  productIcon: { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  productName: { fontSize: 15, fontFamily: "Poppins_600SemiBold" },
   productTag: { fontSize: 11, fontFamily: "Poppins_400Regular" },
+  tagPill: { backgroundColor: "rgba(0,0,0,0.05)", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  tagPillText: { fontSize: 10, fontFamily: "Poppins_600SemiBold", color: "#555" },
   productPrice: { fontSize: 16, fontFamily: "Poppins_700Bold" },
-  productActions: { justifyContent: "center", borderLeftWidth: 1, borderLeftColor: "rgba(0,0,0,0.06)", paddingHorizontal: 6 },
+  productActions: { justifyContent: "center", borderLeftWidth: 1, borderLeftColor: "rgba(0,0,0,0.06)", paddingHorizontal: 4 },
   productActionBtn: { padding: 8 },
 
   // Sale card
-  saleCard: { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: 12, borderWidth: 1, marginBottom: 8, gap: 10 },
-  saleIconWrap: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  saleCard: { flexDirection: "row", alignItems: "center", padding: 14, borderRadius: 16, borderWidth: 1, borderLeftWidth: 4, marginBottom: 10, gap: 12, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
+  saleIconWrap: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   saleName: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
-  saleMeta: { fontSize: 12, fontFamily: "Poppins_400Regular", marginTop: 1 },
-  saleTotal: { fontSize: 15, fontFamily: "Poppins_700Bold" },
+  saleMeta: { fontSize: 12, fontFamily: "Poppins_400Regular", marginTop: 2 },
+  saleTotal: { fontSize: 16, fontFamily: "Poppins_700Bold" },
 
   // Sheet
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)" },
-  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 14 },
+  modalContainer: { flex: 1, justifyContent: "flex-end" },
+  overlay: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(0,0,0,0.58)" },
+  keyboardView: { justifyContent: "flex-end" },
+  sheet: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    gap: 14,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 10,
+  },
   sheetTall: { maxHeight: "85%" },
-  sheetHandle: { width: 40, height: 4, backgroundColor: "#E0E0E0", borderRadius: 2, alignSelf: "center", marginBottom: 8 },
+  sheetHandle: { width: 50, height: 5, backgroundColor: "#DDDDE8", borderRadius: 3, alignSelf: "center", marginBottom: 8 },
   sheetHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  sheetTitle: { fontSize: 20, fontFamily: "Poppins_700Bold" },
+  sheetTitle: { fontSize: 20, fontFamily: "Poppins_700Bold", letterSpacing: -0.3 },
+  closeBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: "rgba(0,0,0,0.06)", alignItems: "center", justifyContent: "center" },
   addBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
 
   // Form
-  label: { fontSize: 11, fontFamily: "Poppins_600SemiBold", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6, marginTop: 2 },
-  input: { height: 52, borderRadius: 12, borderWidth: 1, paddingHorizontal: 14, fontSize: 15, fontFamily: "Poppins_400Regular" },
-  phoneRow: { flexDirection: "row", alignItems: "center", borderRadius: 12, borderWidth: 1, height: 52, paddingHorizontal: 14, gap: 10 },
+  label: { fontSize: 11, fontFamily: "Poppins_600SemiBold", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 6, marginTop: 2, opacity: 0.6 },
+  input: { height: 54, borderRadius: 16, borderWidth: 1.5, paddingHorizontal: 14, fontSize: 15, fontFamily: "Poppins_400Regular" },
+  phoneRow: { flexDirection: "row", alignItems: "center", borderRadius: 16, borderWidth: 1.5, height: 54, paddingHorizontal: 14, gap: 10 },
   phoneInput: { flex: 1, fontSize: 15, fontFamily: "Poppins_400Regular" },
 
   // Quantity selector

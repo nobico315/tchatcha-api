@@ -8,10 +8,10 @@ import { useColors } from "@/hooks/useColors";
 import { formatTime } from "@/utils/format";
 
 const alertConfig = {
-  balance: { Icon: AlertTriangle, color: "#7a5c00", bg: "#FFF8DC" },
-  subscription: { Icon: Clock, color: "#b00000", bg: "#fdecea" },
-  sync: { Icon: CheckCircle, color: "#1a7a4a", bg: "#eafaf0" },
-  reminder: { Icon: Bell, color: "#005b99", bg: "#e3f2fd" },
+  balance: { Icon: AlertTriangle, color: "#D97706", bg: "#FEF3C7" },
+  subscription: { Icon: Clock, color: "#EF4444", bg: "#FEE2E2" },
+  sync: { Icon: CheckCircle, color: "#10B981", bg: "#D1FAE5" },
+  reminder: { Icon: Bell, color: "#191970", bg: "#ECE8FF" },
 };
 
 export default function Alerts() {
@@ -21,14 +21,14 @@ export default function Alerts() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      <View style={[styles.header, { paddingTop: topPad + 12, backgroundColor: colors.background }]}>
+    <View style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
+      <View style={[styles.header, { paddingTop: topPad + 12, backgroundColor: "#FFFFFF" }]}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Text style={[styles.back, { color: colors.primary }]}>← Retour</Text>
+          <Text style={[styles.back, { color: "#8E9AB4" }]}>← Retour</Text>
         </TouchableOpacity>
-        <Text style={[styles.heading, { color: colors.primary }]}>Alertes</Text>
+        <Text style={[styles.heading, { color: "#000000" }]}>Alertes</Text>
         <TouchableOpacity onPress={markAllRead}>
-          <Text style={[styles.markAll, { color: colors.accent }]}>Tout lire</Text>
+          <Text style={[styles.markAll, { color: "#191970" }]}>Tout lire</Text>
         </TouchableOpacity>
       </View>
 
@@ -60,16 +60,16 @@ export default function Alerts() {
 }
 
 const styles = StyleSheet.create({
-  header: { paddingHorizontal: 20, paddingBottom: 16, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  header: { paddingHorizontal: 20, paddingBottom: 16, flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#E8E8F5" },
   back: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
   heading: { fontSize: 20, fontFamily: "Poppins_700Bold" },
   markAll: { fontSize: 13, fontFamily: "Poppins_600SemiBold" },
   list: { padding: 20, gap: 12, paddingBottom: 40 },
-  card: { flexDirection: "row", borderRadius: 14, borderWidth: 1, padding: 14, gap: 12, alignItems: "flex-start" },
+  card: { flexDirection: "row", borderRadius: 16, borderWidth: 1, borderColor: "#E8E8F5", padding: 14, gap: 12, alignItems: "flex-start", backgroundColor: "#FFFFFF" },
   iconWrap: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   content: { flex: 1, gap: 3 },
-  title: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
-  desc: { fontSize: 12, fontFamily: "Poppins_400Regular", lineHeight: 18 },
-  time: { fontSize: 11, fontFamily: "Poppins_400Regular" },
-  unreadDot: { width: 8, height: 8, borderRadius: 4, marginTop: 4 },
+  title: { fontSize: 14, fontFamily: "Poppins_600SemiBold", color: "#000000" },
+  desc: { fontSize: 12, fontFamily: "Poppins_400Regular", lineHeight: 18, color: "#8E9AB4" },
+  time: { fontSize: 11, fontFamily: "Poppins_400Regular", color: "#8E9AB4" },
+  unreadDot: { width: 8, height: 8, borderRadius: 4, marginTop: 4, backgroundColor: "#191970" },
 });

@@ -1,10 +1,104 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { daySessionsTable, transactionsTable } from "@workspace/db";
-import { eq, and, gte, lt } from "drizzle-orm";
+import { eq, and, gte, lt, desc } from "drizzle-orm";
 import { requireAuth, type AuthenticatedRequest } from "../middlewares/authMiddleware";
 
 const router = Router();
+
+export function calculateExpectedSessionBalances(
+  session: typeof daySessionsTable.$inferSelect,
+  txs: (typeof transactionsTable.$inferSelect)[]
+) {
+  let cash = session.openingCash;
+  let mtn = session.openingMtn;
+  let moov = session.openingMoov;
+  let celtis = session.openingCeltis;
+
+  txs.forEach((tx) => {
+    const amount = tx.amount;
+    const op = tx.operator as "MTN" | "Moov" | "Celtis";
+    if (tx.type === "depot") {
+      // Dépôt : l'agent reçoit du cash (+cash si payé) et envoie de la monnaie virtuelle (-opérateur)
+      if (tx.paid !== false) cash += amount;
+      if (op === "MTN") mtn -= amount;
+      else if (op === "Moov") moov -= amount;
+      else if (op === "Celtis") celtis -= amount;
+    } else if (tx.type === "vente") {
+      // Vente de forfait/crédit : cash + (si payé), monnaie virtuelle -
+      if (tx.paid !== false) cash += amount;
+      if (op === "MTN") mtn -= amount;
+      else if (op === "Moov") moov -= amount;
+      else if (op === "Celtis") celtis -= amount;
+    } else if (tx.type === "recharge" || tx.type === "retrait") {
+      // Retrait : l'agent donne du cash (-cash si payé) et reçoit de la monnaie virtuelle (+opérateur)
+      if (tx.paid !== false) cash -= amount;
+      if (op === "MTN") mtn += amount;
+      else if (op === "Moov") moov += amount;
+      else if (op === "Celtis") celtis += amount;
+    }
+  });
+
+  return {
+    cash,
+    MTN: mtn,
+    Moov: moov,
+    Celtis: celtis,
+    total: cash + mtn + moov + celtis,
+  };
+}
+
+export async function autoClosePastSessions(agentId?: string) {
+  const today = new Date().toISOString().split("T")[0];
+  const now = new Date();
+  const isPast2359Today = now.getHours() === 23 && now.getMinutes() >= 59;
+
+  const conditions = [eq(daySessionsTable.isOpen, true)];
+  if (agentId) {
+    conditions.push(eq(daySessionsTable.agentId, agentId));
+  }
+
+  const openSessions = await db
+    .select()
+    .from(daySessionsTable)
+    .where(and(...conditions));
+
+  for (const session of openSessions) {
+    if (session.date < today || (session.date === today && isPast2359Today)) {
+      const sessionDateStart = new Date(session.date + "T00:00:00.000Z");
+      const sessionDateEnd = new Date(session.date + "T23:59:59.999Z");
+
+      const dayTxs = await db
+        .select()
+        .from(transactionsTable)
+        .where(
+          and(
+            eq(transactionsTable.agentId, session.agentId),
+            gte(transactionsTable.createdAt, sessionDateStart),
+            lt(transactionsTable.createdAt, sessionDateEnd)
+          )
+        );
+
+      const expected = calculateExpectedSessionBalances(session, dayTxs);
+      const closedAt = new Date(session.date + "T23:59:59.000Z");
+
+      await db
+        .update(daySessionsTable)
+        .set({
+          isOpen: false,
+          closingCash: expected.cash,
+          closingMtn: expected.MTN,
+          closingMoov: expected.Moov,
+          closingCeltis: expected.Celtis,
+          closingTotal: expected.total,
+          closedAt,
+        })
+        .where(eq(daySessionsTable.id, session.id));
+
+      console.log(`[SESSION] 🌙 Clôture automatique à 23h59 appliquée pour la session ${session.id} (${session.date}) de l'agent ${session.agentId}`);
+    }
+  }
+}
 
 router.get("/today", requireAuth, async (req, res): Promise<void> => {
   const authReq = req as AuthenticatedRequest;
@@ -12,6 +106,8 @@ router.get("/today", requireAuth, async (req, res): Promise<void> => {
   const today = new Date().toISOString().split("T")[0];
 
   try {
+    await autoClosePastSessions(agent.id);
+
     const [session] = await db
       .select()
       .from(daySessionsTable)
@@ -196,28 +292,10 @@ router.post("/close", requireAuth, async (req, res): Promise<void> => {
         )
       );
 
-    let mtn = session.openingMtn;
-    let moov = session.openingMoov;
-    let celtis = session.openingCeltis;
-
-    todayTxs.forEach((tx) => {
-      const amount = tx.amount;
-      const op = tx.operator as "MTN" | "Moov" | "Celtis";
-      if (tx.type === "depot") {
-        if (op === "MTN") mtn += amount;
-        else if (op === "Moov") moov += amount;
-        else if (op === "Celtis") celtis += amount;
-      } else if (tx.type === "vente") {
-        if (op === "MTN") mtn -= amount;
-        else if (op === "Moov") moov -= amount;
-        else if (op === "Celtis") celtis -= amount;
-      } else if (tx.type === "recharge" || tx.type === "retrait") {
-        if (op === "MTN") mtn += amount;
-        else if (op === "Moov") moov += amount;
-        else if (op === "Celtis") celtis += amount;
-      }
-    });
-
+    const expected = calculateExpectedSessionBalances(session, todayTxs);
+    const mtn = expected.MTN;
+    const moov = expected.Moov;
+    const celtis = expected.Celtis;
     const closingTotal = closingCash + mtn + moov + celtis;
     const closedAt = new Date();
 
@@ -258,6 +336,43 @@ router.post("/close", requireAuth, async (req, res): Promise<void> => {
     });
   } catch (error) {
     res.status(500).json({ error: "Erreur interne lors de la clôture de la session." });
+  }
+});
+
+router.get("/yesterday", requireAuth, async (req, res): Promise<void> => {
+  const authReq = req as AuthenticatedRequest;
+  const agent = authReq.user!;
+  const today = new Date().toISOString().split("T")[0];
+
+  try {
+    await autoClosePastSessions(agent.id);
+
+    const [lastSession] = await db
+      .select()
+      .from(daySessionsTable)
+      .where(and(eq(daySessionsTable.agentId, agent.id), lt(daySessionsTable.date, today)))
+      .orderBy(desc(daySessionsTable.date))
+      .limit(1);
+
+    if (!lastSession) {
+      res.status(404).json({ error: "Aucune session précédente trouvée." });
+      return;
+    }
+
+    res.json({
+      id: lastSession.id,
+      agentId: lastSession.agentId,
+      date: lastSession.date,
+      closingBalances: {
+        cash: lastSession.closingCash ?? lastSession.openingCash,
+        MTN: lastSession.closingMtn ?? lastSession.openingMtn,
+        Moov: lastSession.closingMoov ?? lastSession.openingMoov,
+        Celtis: lastSession.closingCeltis ?? lastSession.openingCeltis,
+      },
+      closingTotal: lastSession.closingTotal ?? lastSession.openingTotal,
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Erreur lors de la récupération des soldes de la veille." });
   }
 });
 

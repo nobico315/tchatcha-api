@@ -149,14 +149,14 @@ export default function QuickStockModal({ visible, onClose, barcode, colors }: Q
       <View style={s.modalContainer}>
         <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={onClose} />
         <KeyboardAvoidingView 
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={s.keyboardView}
         >
           <View style={[s.sheet, { backgroundColor: colors.background, paddingBottom: (Platform.OS === "web" ? 20 : insets.bottom) + 20 }]}>
             <View style={s.handle} />
             <View style={s.headerRow}>
               <Text style={[s.sheetTitle, { color: colors.primary }]}>{localProduct ? "Mettre à jour le stock" : "Ajouter au stock"}</Text>
-              <TouchableOpacity onPress={onClose} hitSlop={12}><X size={22} color={colors.muted} /></TouchableOpacity>
+              <TouchableOpacity onPress={onClose} hitSlop={12} style={s.closeBtn}><X size={18} color={colors.muted} /></TouchableOpacity>
             </View>
 
             {barcode && (
@@ -305,29 +305,39 @@ export default function QuickStockModal({ visible, onClose, barcode, colors }: Q
 
 const s = StyleSheet.create({
   modalContainer: { flex: 1, justifyContent: "flex-end" },
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)" },
+  overlay: { ...StyleSheet.absoluteFill, backgroundColor: "rgba(0,0,0,0.58)" },
   keyboardView: { width: "100%" },
-  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, gap: 14 },
-  handle: { width: 40, height: 4, backgroundColor: "#E0E0E0", borderRadius: 2, alignSelf: "center", marginBottom: 4 },
+  sheet: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 22,
+    gap: 14,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  handle: { width: 50, height: 5, backgroundColor: "#DDDDE8", borderRadius: 3, alignSelf: "center", marginBottom: 6 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  sheetTitle: { fontSize: 19, fontFamily: "Poppins_700Bold" },
-  barcodePill: { flexDirection: "row", alignItems: "center", borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8 },
+  sheetTitle: { fontSize: 19, fontFamily: "Poppins_700Bold", letterSpacing: -0.3 },
+  closeBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: "rgba(0,0,0,0.06)", alignItems: "center", justifyContent: "center" },
+  barcodePill: { flexDirection: "row", alignItems: "center", borderRadius: 12, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 9 },
   barcodeLabel: { fontSize: 12, fontFamily: "Poppins_400Regular" },
   barcodeValue: { fontSize: 12, fontFamily: "Poppins_600SemiBold" },
   loadingBox: { alignItems: "center", justifyContent: "center", gap: 12, minHeight: 180 },
   loadingText: { fontSize: 14, fontFamily: "Poppins_400Regular" },
-  statusBadge: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 4 },
+  statusBadge: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 14, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 11, marginBottom: 4 },
   statusText: { fontSize: 13, fontFamily: "Poppins_600SemiBold", flex: 1 },
-  label: { fontSize: 11, fontFamily: "Poppins_600SemiBold", textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 6, marginTop: 4 },
-  input: { borderRadius: 14, borderWidth: 1, height: 52, paddingHorizontal: 14, fontSize: 15, fontFamily: "Poppins_400Regular" },
-  qtyRow: { flexDirection: "row", alignItems: "center", borderRadius: 14, borderWidth: 1, height: 52, overflow: "hidden" },
-  qtyBtn: { width: 44, height: 52, alignItems: "center", justifyContent: "center" },
+  label: { fontSize: 11, fontFamily: "Poppins_600SemiBold", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 7, marginTop: 4, opacity: 0.6 },
+  input: { borderRadius: 16, borderWidth: 1.5, height: 54, paddingHorizontal: 16, fontSize: 15, fontFamily: "Poppins_400Regular" },
+  qtyRow: { flexDirection: "row", alignItems: "center", borderRadius: 16, borderWidth: 1.5, height: 54, overflow: "hidden" },
+  qtyBtn: { width: 46, height: 54, alignItems: "center", justifyContent: "center" },
   qtyBtnTxt: { fontSize: 22, fontFamily: "Poppins_700Bold" },
-  qtyInput: { flex: 1, height: 52, fontSize: 18, fontFamily: "Poppins_700Bold" },
-  submitBtn: { height: 56, borderRadius: 16, alignItems: "center", justifyContent: "center", marginTop: 4 },
-  submitBtnText: { fontSize: 16, fontFamily: "Poppins_700Bold" },
-  
-  purchaseTypeRow: { flexDirection: "row", borderWidth: 1, borderColor: "#ccc", borderRadius: 14, height: 52, overflow: "hidden" },
+  qtyInput: { flex: 1, height: 54, fontSize: 18, fontFamily: "Poppins_700Bold" },
+  submitBtn: { height: 58, borderRadius: 18, alignItems: "center", justifyContent: "center", marginTop: 6 },
+  submitBtnText: { fontSize: 16, fontFamily: "Poppins_700Bold", letterSpacing: 0.2 },
+  purchaseTypeRow: { flexDirection: "row", borderWidth: 1.5, borderColor: "#D4D4D8", borderRadius: 16, height: 54, overflow: "hidden" },
   typeBtn: { flex: 1, alignItems: "center", justifyContent: "center" },
-  typeBtnText: { fontSize: 12, fontFamily: "Poppins_600SemiBold" }
+  typeBtnText: { fontSize: 13, fontFamily: "Poppins_600SemiBold" }
 });

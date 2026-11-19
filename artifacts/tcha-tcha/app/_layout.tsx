@@ -13,6 +13,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { setBaseUrl, setAuthTokenGetter } from "@workspace/api-client-react";
+import { getApiBaseUrl } from "@/utils/apiConfig";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider } from "@/context/AuthContext";
@@ -22,8 +23,7 @@ import { ProductProvider } from "@/context/ProductContext";
 
 SplashScreen.preventAutoHideAsync();
 
-const apiHost = process.env.EXPO_PUBLIC_API_URL || 
-                (process.env.EXPO_PUBLIC_DOMAIN ? `https://${process.env.EXPO_PUBLIC_DOMAIN}` : "http://localhost:5000");
+const apiHost = getApiBaseUrl();
 
 setBaseUrl(apiHost);
 setAuthTokenGetter(async () => {

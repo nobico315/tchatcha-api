@@ -1,21 +1,27 @@
 import { 
   ArrowDownCircle, 
   ArrowUpCircle, 
-  BarChart2, 
   Bell, 
-  BookOpen, 
+  CloudOff,
+  RefreshCw, 
   Lock, 
   AlertCircle, 
   Smartphone, 
+  X,
   Coins,
+  ChevronRight,
+  TrendingUp,
   UserCheck,
-  Archive,
 } from "lucide-react-native";
 import { router } from "expo-router";
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { 
   Alert,
+  Animated,
+  Easing,
+  Modal,
   Platform, 
+  RefreshControl,
   ScrollView, 
   StyleSheet, 
   Text, 
@@ -25,18 +31,14 @@ import {
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
 
-import { BalanceCard } from "@/components/BalanceCard";
 import { ErrorTransactionAlert } from "@/components/ErrorTransactionAlert";
-import { SyncStatus } from "@/components/SyncStatus";
 import { TransactionItem } from "@/components/TransactionItem";
 import { AgentCard } from "@/components/AgentCard";
-import { useAuth, User } from "@/context/AuthContext";
+import { isSubscriptionActive, useAuth, User } from "@/context/AuthContext";
 import { useTransactions } from "@/context/TransactionContext";
 import { useAlerts } from "@/context/AlertContext";
-import { useColors } from "@/hooks/useColors";
-import { formatAmount, formatDate } from "@/utils/format";
+import { formatAmount, formatDate, formatTime } from "@/utils/format";
 import { 
   calculateCommission, 
   loadCommissionSettings, 
@@ -46,32 +48,66 @@ import {
 } from "@/utils/commission";
 
 export default function Dashboard() {
-  const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { user, getMyAgents } = useAuth();
   const { 
     transactions, 
-    syncStatusGlobal, 
+    isOnline,
     getBalance, 
     refreshTransactions, 
     getTodaySession, 
-    getTodayStats, 
     getErrorTransactions, 
     getSessionBalances,
     reopenDay,
   } = useTransactions();
-  const { unreadCount, sendReminder } = useAlerts();
+  const { unreadCount } = useAlerts();
   const [refreshed, setRefreshed] = useState(new Date().toISOString());
   const [myAgents, setMyAgents] = useState<User[]>([]);
   const [showErrors, setShowErrors] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const [commSettings, setCommSettings] = useState<CommissionSettings>(DEFAULT_COMMISSION_SETTINGS);
   const [reopening, setReopening] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   const isGerant = user?.role === "gerant";
+  const isSubscriptionActiveNow = isSubscriptionActive(user?.subscriptionExpiry);
+  const syncStyle = !isSubscriptionActiveNow
+    ? { bg: "#FEF2F2", border: "#FECACA", iconColor: "#DC2626" }
+    : isOnline
+      ? { bg: "#F0FDF4", border: "#BBF7D0", iconColor: "#15803D" }
+      : { bg: "#FFFBEB", border: "#FDE68A", iconColor: "#B45309" };
+
+  const spinValue = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!isRefreshing) {
+      spinValue.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.timing(spinValue, {
+        toValue: 1,
+        duration: 850,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isRefreshing, spinValue]);
+
+  const spinInterpolate = spinValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
+  const syncAccessibilityLabel = !isSubscriptionActiveNow
+    ? "Synchronisation désactivée, abonnement expiré"
+    : isOnline
+      ? "Synchronisation en ligne active"
+      : "Synchronisation en attente, hors ligne";
   const errorTxs = getErrorTransactions();
 
-  // Load commission settings and agents on mount
   useEffect(() => {
     async function initData() {
       const settings = await loadCommissionSettings();
@@ -87,10 +123,9 @@ export default function Dashboard() {
   const todaySession = user ? getTodaySession(user.id) : null;
   const balance = user ? getBalance(user.id) : 0;
   const sessionBalances = user ? getSessionBalances(user.id) : undefined;
-  const todayStats = getTodayStats(user?.id);
   const today = formatDate(new Date().toISOString());
+  const lastUpdateTime = formatTime(refreshed);
 
-  // Filter transactions made today
   const agentTxToday = useMemo(() => {
     const todayStr = new Date().toISOString().split("T")[0];
     return transactions.filter((t) => {
@@ -102,14 +137,8 @@ export default function Dashboard() {
     });
   }, [transactions, myAgents, isGerant, user]);
 
-  const isCompactLayout = width < 380;
-  const statCardWidth = (width - 40 - 10) / 2;
-  const quickActionWidth = isCompactLayout ? (width - 40 - 8) / 2 : (width - 40 - 24) / 4;
-  const visibleAgentCount = isCompactLayout ? 2 : 3;
-  const visibleRecentCount = isCompactLayout ? 3 : 4;
-  const recent = useMemo(() => agentTxToday.slice(0, isGerant ? visibleRecentCount : 5), [agentTxToday, isGerant, visibleRecentCount]);
+  const recent = useMemo(() => agentTxToday.slice(0, 5), [agentTxToday]);
 
-  // Calculate today's estimated profits (commissions)
   const todayCommission = useMemo(() => {
     return agentTxToday.reduce((sum, tx) => {
       return sum + calculateCommission(tx.type, tx.amount, tx.operator as Operator, commSettings);
@@ -117,57 +146,107 @@ export default function Dashboard() {
   }, [agentTxToday, commSettings]);
 
   const handleRefresh = async () => {
-    await refreshTransactions();
-    setRefreshed(new Date().toISOString());
+    setIsRefreshing(true);
+    try {
+      await refreshTransactions();
+      setRefreshed(new Date().toISOString());
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = Platform.OS === "web" ? 34 : insets.top;
+
+  const isDayOpen = !!(todaySession && todaySession.isOpen);
+
+  const handleQuickAction = (targetType: string) => {
+    if (!isDayOpen && agentTxToday.length >= 1) {
+      Alert.alert(
+        "Ouverture de journée requise",
+        "Vous avez déjà enregistré une opération sans ouverture de caisse.\n\nPour continuer vos opérations, vous devez ouvrir votre journée et saisir votre fond de caisse.",
+        [
+          { text: "Annuler", style: "cancel" },
+          { text: "Ouvrir la journée", onPress: () => router.push("/ouvrir-journee") },
+        ]
+      );
+      return;
+    }
+    router.push(`/new-transaction?type=${targetType}` as any);
+  };
 
   const quickActions = [
     {
       label: "Dépôt",
-      icon: <ArrowDownCircle size={24} color={colors.successText} />,
-      bg: colors.successBg,
-      onPress: () => router.push("/new-transaction?type=depot"),
+      icon: <ArrowDownCircle size={28} color="#16A34A" strokeWidth={2.2} />,
+      bg: "#D8F8E6",
+      onPress: () => handleQuickAction("depot"),
     },
     {
       label: "Retrait",
-      icon: <ArrowUpCircle size={24} color={colors.dangerText} />,
-      bg: colors.dangerBg,
-      onPress: () => router.push("/new-transaction?type=retrait"),
+      icon: <ArrowUpCircle size={28} color="#EF4444" strokeWidth={2.2} />,
+      bg: "#FDE2E4",
+      onPress: () => handleQuickAction("retrait"),
     },
     {
       label: "Crédit",
-      icon: <Smartphone size={24} color={colors.primary} />,
-      bg: "rgba(25, 25, 112, 0.07)",
-      onPress: () => router.push("/new-transaction?type=vente"),
-    },
-    {
-      label: "Stock",
-      icon: <Archive size={24} color="#00C3FF" />,
-      bg: "rgba(0, 195, 255, 0.08)",
-      onPress: () => router.push("/stock"),
+      icon: <Smartphone size={28} color="#6366F1" strokeWidth={2.2} />,
+      bg: "#ECE8FF",
+      onPress: () => handleQuickAction("vente"),
     },
   ];
 
+  const agentDisplayName = user?.lastName || user?.firstName || "Medessi";
+
   return (
-    <>
+    <View style={styles.container}>
       <ScrollView
-        style={[styles.bg, { backgroundColor: colors.surface }]}
+        style={styles.container}
         contentContainerStyle={{ paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor="#191970"
+            colors={["#191970"]}
+          />
+        }
       >
-        {/* Header */}
-        <View style={[styles.header, { paddingTop: topPad + 12, backgroundColor: colors.background }]}>
-          <View style={styles.headerInner}>
-            <View>
-              <Text style={[styles.greeting, { color: colors.primary }]}>
-                Bonjour {user?.firstName}
-              </Text>
-              <Text style={[styles.date, { color: colors.muted }]}>{today}</Text>
-            </View>
-            <TouchableOpacity onPress={() => router.push("/alerts")} style={styles.bellWrap}>
-              <Bell size={22} color={colors.primary} />
+        {/* ── 1. Header (White background, black & 8E9AB4) ── */}
+        <View style={[styles.header, { paddingTop: topPad + 12 }]}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.greetingText}>Bonjour Agent {agentDisplayName}</Text>
+            <Text style={styles.dateText}>{today}</Text>
+          </View>
+
+          <View style={styles.headerRight}>
+            <TouchableOpacity
+              onPress={handleRefresh}
+              disabled={isRefreshing}
+              style={[
+                styles.syncBtn,
+                { backgroundColor: syncStyle.bg, borderColor: syncStyle.border },
+              ]}
+              activeOpacity={0.75}
+              accessibilityRole="button"
+              accessibilityLabel={syncAccessibilityLabel}
+            >
+              {!isOnline && isSubscriptionActiveNow ? (
+                <CloudOff size={18} color={syncStyle.iconColor} strokeWidth={2.2} />
+              ) : (
+                <Animated.View style={{ transform: [{ rotate: spinInterpolate }] }}>
+                  <RefreshCw size={18} color={syncStyle.iconColor} strokeWidth={2.3} />
+                </Animated.View>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => router.push("/alerts")}
+              style={styles.bellBtn}
+              activeOpacity={0.75}
+            >
+              <Bell size={19} color="#0F172A" strokeWidth={2.1} />
               {unreadCount > 0 && (
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>{unreadCount}</Text>
@@ -175,230 +254,184 @@ export default function Dashboard() {
               )}
             </TouchableOpacity>
           </View>
-          <View style={styles.syncRow}>
-            <SyncStatus status={syncStatusGlobal} />
+        </View>
+
+        {/* ── 2. Banner "Ouvrir la journée" (Deep #191970) ── */}
+        <View style={styles.sectionPad}>
+          {!isDayOpen ? (
+            <View style={styles.dayBanner}>
+              <View style={styles.dayBannerLeft}>
+                <Text style={styles.dayBannerTitle}>
+                  {agentTxToday.length >= 1 ? "Ouverture requise" : "Ouvrir la journée"}
+                </Text>
+                <Text style={styles.dayBannerSub}>
+                  {agentTxToday.length >= 1
+                    ? "1 opération enregistrée • Saisissez votre fond"
+                    : "Saisissez votre fond de caisse"}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.dayBannerBtn}
+                onPress={() => router.push("/ouvrir-journee")}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.dayBannerBtnText}>
+                  {agentTxToday.length >= 1 ? "Ouvrir" : "Démarrer"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.dayBanner}>
+              <View style={styles.dayBannerLeft}>
+                <Text style={styles.dayBannerTitle}>Journée ouverte</Text>
+                <Text style={styles.dayBannerSub}>
+                  Fond : {formatAmount(todaySession?.openingTotal ?? todaySession?.openingBalance ?? 0)} FCFA
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.dayBannerBtn, { backgroundColor: "#FFFFFF" }]}
+                onPress={() => router.push("/fermer-journee")}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.dayBannerBtnText}>Clôturer</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {/* ── 3. Solde flottant total (Direct on white) ── */}
+        <View style={styles.floatingBalanceSection}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={styles.balanceLabel}>Solde flottant total</Text>
+            {/* Freemium counter pill */}
+            {!isGerant && (
+              <TouchableOpacity
+                onPress={() => router.push("/abonnement")}
+                activeOpacity={0.7}
+                style={[
+                  styles.quotaBadge,
+                  agentTxToday.length >= 50 && styles.quotaBadgeFull,
+                ]}
+              >
+                <Text style={[
+                  styles.quotaBadgeText,
+                  agentTxToday.length >= 50 && { color: "#EF4444" },
+                ]}>
+                  {agentTxToday.length}/50 tx aujourd'hui
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={styles.balanceContentRow}>
+            <View style={styles.balanceLeftCol}>
+              <Text style={styles.balanceAmountText}>{formatAmount(balance)}</Text>
+              <Text style={styles.balanceUpdateText}>Mis à jour à {lastUpdateTime}</Text>
+            </View>
+
+            <View style={styles.balanceRightCol}>
+              <Text style={styles.balanceCurrencyText}>FCFA</Text>
+              <TouchableOpacity onPress={() => setShowDetails(true)} activeOpacity={0.7}>
+                <Text style={styles.balanceDetailsBtnText}>Détails</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
-        <View style={{ paddingTop: 20, gap: 20 }}>
-          {/* ── AGENT: Day Session Banner ── */}
-          {!isGerant && (
-            <View style={{ paddingHorizontal: 20 }}>
-              {!todaySession ? (
-                <TouchableOpacity
-                  style={[styles.dayBanner, { backgroundColor: colors.primary }]}
-                  onPress={() => router.push("/ouvrir-journee")}
-                  activeOpacity={0.85}
-                >
-                  <BookOpen size={22} color="#FFD700" />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.dayBannerTitle}>Ouvrir la journée</Text>
-                    <Text style={styles.dayBannerSub}>Saisissez votre fond de caisse pour commencer</Text>
-                  </View>
-                  <View style={styles.dayBannerBtn}>
-                    <Text style={styles.dayBannerBtnText}>Démarrer</Text>
-                  </View>
-                </TouchableOpacity>
-              ) : todaySession.isOpen ? (
-                <View style={[styles.dayBannerOpen, { backgroundColor: colors.successBg, borderColor: colors.successText }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.dayBannerTitle, { color: colors.successText }]}>Journée ouverte</Text>
-                    <Text style={[styles.dayBannerSub, { color: colors.successText }]}>
-                      Démarrage : {formatAmount(todaySession.openingTotal ?? todaySession.openingBalance ?? 0)} FCFA
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={[styles.closeDayBtn, { backgroundColor: colors.dangerText }]}
-                    onPress={() => router.push("/fermer-journee")}
-                  >
-                    <Lock size={14} color="#fff" />
-                    <Text style={styles.closeDayBtnText}>Clôturer</Text>
-                  </TouchableOpacity>
+        {/* ── 4. Actions rapides (Dépôt, Retrait, Crédit) ── */}
+        <View style={styles.actionsSection}>
+          <Text style={styles.sectionHeading}>Actions rapides</Text>
+
+          <View style={styles.quickActionsRow}>
+            {quickActions.map((act) => (
+              <TouchableOpacity
+                key={act.label}
+                style={styles.actionBtnWrap}
+                onPress={act.onPress}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.actionIconBox, { backgroundColor: act.bg }]}>
+                  {act.icon}
                 </View>
-              ) : (
-                <View style={[styles.dayBannerOpen, { backgroundColor: "#f5f5f5", borderColor: colors.border }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.dayBannerTitle, { color: colors.muted }]}>Journée clôturée</Text>
-                    <Text style={[styles.dayBannerSub, { color: colors.muted }]}>Rapport disponible dans l'onglet Rapport</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={[styles.closeDayBtn, { backgroundColor: colors.primary }]}
-                    onPress={async () => {
-                      if (!user || reopening) return;
-                      setReopening(true);
-                      try {
-                        await reopenDay(user.id);
-                        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                        router.replace("/");
-                      } catch (err) {
-                        Alert.alert("Erreur", (err as Error)?.message ?? "Impossible de rouvrir la journée.");
-                      } finally {
-                        setReopening(false);
-                      }
-                    }}
-                    disabled={reopening}
-                  >
-                    <Lock size={14} color="#fff" />
-                    <Text style={styles.closeDayBtnText}>{reopening ? "Rouverte..." : "Rouvrir"}</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+                <Text style={styles.actionLabel}>{act.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
 
-              <View style={styles.balanceCardWrap}>
-                <BalanceCard
-                  balance={balance}
-                  sessionBalances={sessionBalances}
-                  updatedAt={refreshed}
-                  onRefresh={handleRefresh}
-                />
-              </View>
-
-              {/* Daily profit badge under the balance card */}
-              <View style={styles.profitBadgeContainer}>
-                <View style={[styles.profitBadge, { backgroundColor: colors.successBg, borderColor: colors.successText }]}>
-                  <View style={styles.profitBadgeLeft}>
-                    <Coins size={16} color={colors.successText} />
-                    <Text style={[styles.profitBadgeLabel, { color: colors.successText }]}>Bénéfices aujourd'hui</Text>
-                  </View>
-                  <Text style={[styles.profitBadgeValue, { color: colors.successText }]}>+ {formatAmount(todayCommission)} FCFA</Text>
-                </View>
-              </View>
-
-              {/* Agent's Manager Info Card */}
-              {user?.manager && (
-                <View style={styles.managerCardContainer}>
-                  <View style={[styles.managerCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <View style={styles.managerCardLeft}>
-                      <View style={[styles.managerIconBg, { backgroundColor: "rgba(25, 25, 112, 0.06)" }]}>
-                        <UserCheck size={16} color={colors.primary} />
-                      </View>
-                      <View style={{ marginLeft: 8 }}>
-                        <Text style={[styles.managerLabel, { color: colors.muted }]}>Mon Gérant</Text>
-                        <Text style={[styles.managerName, { color: colors.text }]}>
-                          {user.manager.firstName} {user.manager.lastName}
-                        </Text>
-                      </View>
-                    </View>
-                    <Text style={[styles.managerPhone, { color: colors.primary }]}>{user.manager.phone}</Text>
-                  </View>
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* Manager dashboard stats */}
-          {isGerant && (
-            <View style={{ gap: 12 }}>
-              <View style={styles.statsRow}>
-                {[
-                  { label: "Mes agents", value: `${myAgents.length}` },
-                  { label: "Tx aujourd'hui", value: `${agentTxToday.length}` },
-                  { label: "Total dépôts", value: formatAmount(agentTxToday.filter(t => t.type === "depot").reduce((s, t) => s + t.amount, 0)) },
-                  { label: "Total retraits", value: formatAmount(agentTxToday.filter(t => t.type === "retrait").reduce((s, t) => s + t.amount, 0)) },
-                ].map((s) => (
-                  <View key={s.label} style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border, width: statCardWidth, minWidth: statCardWidth }]}>
-                    <Text style={[styles.statVal, { color: colors.primary }]} numberOfLines={1}>{s.value}</Text>
-                    <Text style={[styles.statLabel, { color: colors.muted }]}>{s.label}</Text>
-                  </View>
-                ))}
-              </View>
-              
-              {/* Consolidated profits banner for manager */}
-              <View style={{ paddingHorizontal: 20 }}>
-                <LinearGradient colors={["#191970", "#0B0B3F"]} style={styles.managerProfitBanner}>
-                  <View style={styles.managerProfitHeader}>
-                    <Coins size={18} color="#FFD700" />
-                    <Text style={styles.managerProfitLabel}>Bénéfices consolidés (Aujourd'hui)</Text>
-                  </View>
-                  <Text style={styles.managerProfitValue}>+ {formatAmount(todayCommission)} FCFA</Text>
-                </LinearGradient>
-              </View>
-
-              {/* Manager's Active Team members on home dashboard */}
-              <View style={{ paddingHorizontal: 20, marginTop: 4 }}>
-                <View style={styles.sectionHeader}>
-                  <Text style={[styles.sectionTitle, { color: colors.primary }]}>Membres de l'équipe ({myAgents.length})</Text>
-                  <TouchableOpacity onPress={() => router.push("/equipe")}> 
-                    <Text style={[styles.seeAll, { color: colors.accent }]}>Gérer</Text>
-                  </TouchableOpacity>
-                </View>
-                
-                {myAgents.length === 0 ? (
-                  <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <Text style={[styles.emptyText, { color: colors.muted }]}>Aucun agent rattaché.</Text>
-                  </View>
-                ) : (
-                  myAgents.slice(0, visibleAgentCount).map((agent) => {
-                    const todayStr = new Date().toISOString().split("T")[0];
-                    const txCount = transactions.filter((t) => t.agentId === agent.id && t.createdAt.startsWith(todayStr)).length;
-                    const balance = getBalance(agent.id);
-                    return (
-                      <AgentCard
-                        key={agent.id}
-                        agent={agent}
-                        txCount={txCount}
-                        balance={balance}
-                        onPress={() => router.push("/equipe")}
-                      />
-                    );
-                  })
-                )}
-              </View>
-            </View>
-          )}
-
-          {/* Quick actions (Beautiful, accessible, responsive horizontal layout) */}
-          <View style={{ paddingHorizontal: 20 }}>
-            <Text style={[styles.sectionTitle, { color: colors.primary }]}>Actions rapides</Text>
-            <View style={styles.quickActionsContainer}>
-              {quickActions.map((act) => (
-                <TouchableOpacity
-                  key={act.label}
-                  style={[styles.quickActionBtn, { width: quickActionWidth }]}
-                  onPress={act.onPress}
-                  activeOpacity={0.75}
-                >
-                  <View style={[styles.quickActionIconWrap, { backgroundColor: act.bg }]}>
-                    {act.icon}
-                  </View>
-                  <Text style={[styles.quickActionLabel, { color: colors.text }]} numberOfLines={1}>
-                    {act.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+        {/* ── 5. Transactions récentes ── */}
+        <View style={styles.recentSection}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeading}>Transactions récentes</Text>
+            <TouchableOpacity onPress={() => router.push("/transactions")} activeOpacity={0.7}>
+              <Text style={styles.seeAllText}>Voir tout</Text>
+            </TouchableOpacity>
           </View>
 
-          {/* Recent transactions */}
-          <View style={{ paddingHorizontal: 20 }}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.primary }]}>Transactions récentes</Text>
-              {!isGerant && (
-                <TouchableOpacity onPress={() => router.push("/transactions")}>
-                  <Text style={[styles.seeAll, { color: colors.accent }]}>Voir tout</Text>
-                </TouchableOpacity>
-              )}
+          {recent.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>Aucune transaction enregistrée aujourd'hui.</Text>
             </View>
-            {recent.length === 0 ? (
-              <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[styles.emptyText, { color: colors.muted }]}>Aucune transaction aujourd'hui.</Text>
-              </View>
-            ) : (
-              recent.map((tx) => <TransactionItem key={tx.id} item={tx} onPress={() => {}} />)
-            )}
-          </View>
+          ) : (
+            recent.map((tx) => <TransactionItem key={tx.id} item={tx} onPress={() => {}} commissionSettings={commSettings} />)
+          )}
         </View>
       </ScrollView>
 
-      {/* Error Transaction Alert */}
+      {/* ── Modal Détails du Solde ── */}
+      <Modal visible={showDetails} transparent animationType="fade" onRequestClose={() => setShowDetails(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowDetails(false)}>
+          <View style={styles.modalCard} onStartShouldSetResponder={() => true}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Détails des soldes</Text>
+              <TouchableOpacity onPress={() => setShowDetails(false)}>
+                <X size={20} color="#000000" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalTotalBox}>
+              <Text style={styles.modalTotalLabel}>Solde total disponible</Text>
+              <Text style={styles.modalTotalAmount}>{formatAmount(balance)} FCFA</Text>
+            </View>
+
+            <View style={styles.simList}>
+              {[
+                { name: "Espèces (Caisse)", amount: sessionBalances?.cash ?? balance, color: "#16A34A" },
+                { name: "MTN Mobile Money", amount: sessionBalances?.MTN ?? 0, color: "#EAB308" },
+                { name: "Moov Money", amount: sessionBalances?.Moov ?? 0, color: "#0EA5E9" },
+                { name: "Celtis Cash", amount: sessionBalances?.Celtis ?? 0, color: "#8B5CF6" },
+              ].map((sim) => (
+                <View key={sim.name} style={styles.simRow}>
+                  <View style={styles.simLeft}>
+                    <View style={[styles.simDot, { backgroundColor: sim.color }]} />
+                    <Text style={styles.simName}>{sim.name}</Text>
+                  </View>
+                  <Text style={styles.simAmount}>{formatAmount(sim.amount)} F</Text>
+                </View>
+              ))}
+            </View>
+
+            <TouchableOpacity 
+              style={styles.modalCloseBtn}
+              onPress={() => setShowDetails(false)}
+            >
+              <Text style={styles.modalCloseBtnText}>Fermer</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Error Banner */}
       {errorTxs.length > 0 && (
-        <View style={[styles.errorBanner, { backgroundColor: "#fee2e2" }]}>
+        <View style={styles.errorBanner}>
           <TouchableOpacity
             style={styles.errorBannerContent}
             onPress={() => setShowErrors(true)}
             activeOpacity={0.7}
           >
-            <AlertCircle size={20} color="#ef4444" />
+            <AlertCircle size={18} color="#EF4444" />
             <Text style={styles.errorBannerText}>
               {errorTxs.length} transaction{errorTxs.length > 1 ? "s" : ""} en erreur
             </Text>
@@ -407,184 +440,371 @@ export default function Dashboard() {
       )}
 
       <ErrorTransactionAlert visible={showErrors} onDismiss={() => setShowErrors(false)} />
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  bg: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingBottom: 16 },
-  headerInner: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  greeting: { fontSize: 22, fontFamily: "Poppins_700Bold" },
-  date: { fontSize: 14, fontFamily: "Poppins_400Regular", marginTop: 4 },
-  bellWrap: { position: "relative", padding: 8, minWidth: 44, minHeight: 44, justifyContent: "center", alignItems: "center" },
+  container: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
+
+  // ── Header ──
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 24,
+    paddingBottom: 16,
+    backgroundColor: "#FFFFFF",
+  },
+  headerLeft: {
+    flex: 1,
+  },
+  greetingText: {
+    fontSize: 22,
+    fontFamily: "Poppins_700Bold",
+    color: "#000000",
+    letterSpacing: -0.3,
+  },
+  dateText: {
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: "#8E9AB4",
+    marginTop: 2,
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  syncBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  bellBtn: {
+    position: "relative",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    justifyContent: "center",
+    alignItems: "center",
+  },
   badge: {
-    position: "absolute", top: -2, right: -2,
-    width: 20, height: 20, borderRadius: 10,
-    backgroundColor: "#b00000", alignItems: "center", justifyContent: "center",
+    position: "absolute",
+    top: -2,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#EF4444",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
   },
-  badgeText: { color: "#fff", fontSize: 10, fontFamily: "Poppins_700Bold" },
-  syncRow: { marginTop: 12 },
+  badgeText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontFamily: "Poppins_700Bold",
+  },
+
+  // ── Day Banner ──
+  sectionPad: {
+    paddingHorizontal: 20,
+    marginTop: 8,
+  },
   dayBanner: {
+    backgroundColor: "#191970",
     borderRadius: 16,
-    padding: 18,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
-    minHeight: 80,
-    marginBottom: 18,
+    justifyContent: "space-between",
   },
-  dayBannerOpen: {
-    borderRadius: 16,
-    padding: 18,
-    flexDirection: "row",
+  dayBannerLeft: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  dayBannerTitle: {
+    fontSize: 17,
+    fontFamily: "Poppins_700Bold",
+    color: "#FFFFFF",
+  },
+  dayBannerSub: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: "rgba(255, 255, 255, 0.8)",
+    marginTop: 3,
+  },
+  dayBannerBtn: {
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+    justifyContent: "center",
     alignItems: "center",
-    gap: 14,
-    borderWidth: 1.5,
-    minHeight: 80,
-    marginBottom: 18,
   },
-  dayBannerTitle: { color: "#fff", fontSize: 17, fontFamily: "Poppins_700Bold" },
-  dayBannerSub: { color: "rgba(255,255,255,0.75)", fontSize: 13, fontFamily: "Poppins_400Regular", marginTop: 4 },
-  dayBannerBtn: { backgroundColor: "#FFD700", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, minHeight: 44, justifyContent: "center" },
-  dayBannerBtnText: { color: "#191970", fontSize: 14, fontFamily: "Poppins_700Bold" },
-  closeDayBtn: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, minHeight: 44, justifyContent: "center" },
-  closeDayBtnText: { color: "#fff", fontSize: 14, fontFamily: "Poppins_700Bold" },
-  sectionTitle: { fontSize: 16, fontFamily: "Poppins_700Bold", marginBottom: 12 },
-  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  seeAll: { fontSize: 14, fontFamily: "Poppins_600SemiBold" },
-  
-  // Refactored Quick Actions Styles
-  quickActionsContainer: {
+  dayBannerBtnText: {
+    fontSize: 14,
+    fontFamily: "Poppins_700Bold",
+    color: "#000000",
+  },
+
+  // ── Floating Balance Section ──
+  floatingBalanceSection: {
+    paddingHorizontal: 24,
+    marginTop: 28,
+  },
+  balanceLabel: {
+    fontSize: 13,
+    fontFamily: "Poppins_400Regular",
+    color: "#8E9AB4",
+  },
+  balanceContentRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginTop: 4,
+  },
+  balanceLeftCol: {
+    flex: 1,
+  },
+  balanceAmountText: {
+    fontSize: 54,
+    fontFamily: "Poppins_700Bold",
+    color: "#191970",
+    lineHeight: 62,
+  },
+  balanceUpdateText: {
+    fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: "#8E9AB4",
+    marginTop: 4,
+  },
+  balanceRightCol: {
+    alignItems: "flex-end",
+    paddingTop: 8,
+  },
+  balanceCurrencyText: {
+    fontSize: 20,
+    fontFamily: "Poppins_700Bold",
+    color: "#000000",
+    textAlign: "right",
+  },
+  balanceDetailsBtnText: {
+    fontSize: 14,
+    fontFamily: "Poppins_700Bold",
+    color: "#000000",
+    marginTop: 22,
+    textAlign: "right",
+  },
+
+  // ── Actions rapides ──
+  actionsSection: {
+    paddingHorizontal: 24,
+    marginTop: 32,
+  },
+  sectionHeading: {
+    fontSize: 19,
+    fontFamily: "Poppins_700Bold",
+    color: "#191970",
+  },
+  quickActionsRow: {
+    flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 8,
-    paddingBottom: 4,
+    marginTop: 18,
   },
-  quickActionBtn: {
+  actionBtnWrap: {
     alignItems: "center",
-    gap: 6,
-    marginBottom: 8,
+    width: "30%",
   },
-  quickActionIconWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+  actionIconBox: {
+    width: 72,
+    height: 72,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
   },
-  quickActionLabel: {
-    fontSize: 11,
-    fontFamily: "Poppins_600SemiBold",
+  actionLabel: {
+    fontSize: 13,
+    fontFamily: "Poppins_700Bold",
+    color: "#000000",
+    marginTop: 10,
     textAlign: "center",
   },
 
-  // Balance card spacing
-  balanceCardWrap: {
-    marginBottom: 18,
+  // ── Transactions récentes ──
+  recentSection: {
+    paddingHorizontal: 24,
+    marginTop: 36,
   },
-
-  // Agent Daily Profit Badge
-  profitBadgeContainer: {
-    paddingHorizontal: 0,
-    marginBottom: 4,
-  },
-  profitBadge: {
+  sectionHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1.5,
+    marginBottom: 14,
   },
-  profitBadgeLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  profitBadgeLabel: {
-    fontSize: 12,
-    fontFamily: "Poppins_600SemiBold",
-  },
-  profitBadgeValue: {
-    fontSize: 13,
+  seeAllText: {
+    fontSize: 14,
     fontFamily: "Poppins_700Bold",
+    color: "#000000",
   },
-
-  // Manager Profit Banner
-  managerProfitBanner: {
-    borderRadius: 14,
-    padding: 16,
-    gap: 6,
-  },
-  managerProfitHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  managerProfitLabel: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 11,
-    fontFamily: "Poppins_600SemiBold",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  managerProfitValue: {
-    color: "#FFFFFF",
-    fontSize: 20,
-    fontFamily: "Poppins_700Bold",
-  },
-
-  statsRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: 10, paddingHorizontal: 20 },
-  statCard: { borderRadius: 14, borderWidth: 1, padding: 14, alignItems: "center", minHeight: 85, marginBottom: 4 },
-  statVal: { fontSize: 18, fontFamily: "Poppins_700Bold" },
-  statLabel: { fontSize: 11, fontFamily: "Poppins_400Regular", textAlign: "center", marginTop: 4 },
-  empty: { padding: 24, borderRadius: 14, borderWidth: 1, alignItems: "center" },
-  emptyText: { fontSize: 14, fontFamily: "Poppins_400Regular" },
-  errorBanner: { position: "absolute", bottom: 0, left: 0, right: 0, padding: 12, borderTopWidth: 1, borderTopColor: "#fecaca" },
-  errorBannerContent: { flexDirection: "row", alignItems: "center", gap: 12, justifyContent: "center" },
-  errorBannerText: { fontSize: 14, fontFamily: "Poppins_600SemiBold", color: "#991b1b" },
-
-  // Manager Card styles for Agents
-  managerCardContainer: {
-    paddingHorizontal: 20,
-    marginTop: 4,
-  },
-  managerCard: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  managerCardLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  managerIconBg: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  emptyContainer: {
+    paddingVertical: 32,
     alignItems: "center",
     justifyContent: "center",
   },
-  managerLabel: {
-    fontSize: 9,
-    fontFamily: "Poppins_600SemiBold",
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
-  },
-  managerName: {
+  emptyText: {
     fontSize: 13,
-    fontFamily: "Poppins_700Bold",
-    marginTop: 1,
+    fontFamily: "Poppins_400Regular",
+    color: "#8E9AB4",
+    textAlign: "center",
   },
-  managerPhone: {
+
+  // ── Modal Détails ──
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  modalCard: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 18,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontFamily: "Poppins_700Bold",
+    color: "#191970",
+  },
+  modalTotalBox: {
+    backgroundColor: "#F8FAFC",
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  modalTotalLabel: {
     fontSize: 12,
+    fontFamily: "Poppins_400Regular",
+    color: "#8E9AB4",
+  },
+  modalTotalAmount: {
+    fontSize: 22,
+    fontFamily: "Poppins_700Bold",
+    color: "#191970",
+    marginTop: 4,
+  },
+  simList: {
+    gap: 12,
+    marginBottom: 20,
+  },
+  simRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  simLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  simDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  simName: {
+    fontSize: 14,
     fontFamily: "Poppins_600SemiBold",
+    color: "#000000",
+  },
+  simAmount: {
+    fontSize: 14,
+    fontFamily: "Poppins_700Bold",
+    color: "#191970",
+  },
+  modalCloseBtn: {
+    backgroundColor: "#191970",
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  modalCloseBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontFamily: "Poppins_700Bold",
+  },
+
+  // ── Error Banner ──
+  errorBanner: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    backgroundColor: "#fef2f2",
+    borderTopWidth: 1,
+    borderTopColor: "#fecaca",
+  },
+  errorBannerContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    justifyContent: "center",
+  },
+  errorBannerText: {
+    fontSize: 13,
+    fontFamily: "Poppins_600SemiBold",
+    color: "#991b1b",
+  },
+  quotaBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#F0F3FA",
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#D6DFEE",
+  },
+  quotaBadgeFull: {
+    backgroundColor: "#FEE2E2",
+    borderColor: "#FCA5A5",
+  },
+  quotaBadgeText: {
+    fontSize: 11,
+    fontFamily: "Poppins_600SemiBold",
+    color: "#191970",
   },
 });

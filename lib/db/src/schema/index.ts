@@ -47,6 +47,7 @@ export const transactionsTable = pgTable("transactions", {
   amount: integer("amount").notNull(),
   operator: text("operator").notNull(), // 'MTN' | 'Moov' | 'Celtis'
   note: text("note"),
+  paid: boolean("paid").notNull().default(true),
   savedClient: boolean("saved_client").notNull().default(false),
   saleMode: text("sale_mode"), // 'credit' | 'forfait'
   agentId: text("agent_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),

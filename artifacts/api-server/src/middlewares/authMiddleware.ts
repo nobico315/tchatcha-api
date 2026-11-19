@@ -71,9 +71,10 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
     // Check subscription expiry (exempt certain routes)
     const isExempt = SUBSCRIPTION_EXEMPT_PATHS.some((p) => req.originalUrl.startsWith(p));
-    if (!isExempt && user.subscriptionExpiry && new Date(user.subscriptionExpiry) < now) {
+    const subscriptionExpiry = user.subscriptionExpiry ? new Date(user.subscriptionExpiry).getTime() : Number.NaN;
+    if (!isExempt && (!Number.isFinite(subscriptionExpiry) || subscriptionExpiry <= now.getTime())) {
       res.status(402).json({
-        error: "Abonnement expiré. Veuillez renouveler votre abonnement pour continuer.",
+        error: "Abonnement expiré. La synchronisation en ligne est désactivée. Renouvelez votre abonnement pour la réactiver.",
         code: "SUBSCRIPTION_EXPIRED",
       });
       return;

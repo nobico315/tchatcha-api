@@ -7,24 +7,33 @@
     "icon": "./assets/icon.png",
     "scheme": "tcha-tcha",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#191970"
-    },
     "ios": {
       "supportsTablet": false,
       "infoPlist": {
         "NSCameraUsageDescription": "L'accès à la caméra est nécessaire pour scanner les codes-barres des produits."
       },
-      "bundleIdentifier": "com.anonymous.tchatcha"
+      "bundleIdentifier": "com.mideessi.tchatcha"
     },
     "android": {
       "backgroundColor": "#191970",
       "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.RECEIVE_SMS",
+        "android.permission.READ_SMS",
+        "android.permission.READ_PHONE_STATE",
+        "android.permission.READ_CONTACTS",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.VIBRATE",
+        "android.permission.WAKE_LOCK",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ],
       "package": "com.anonymous.tchatcha"
     },
@@ -36,11 +45,31 @@
       "expo-font",
       "expo-web-browser",
       [
+        "expo-splash-screen",
+        {
+          "image": "./assets/icon.png",
+          "imageWidth": 100,
+          "resizeMode": "contain",
+          "backgroundColor": "#191970"
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "L'accès à la caméra est nécessaire pour scanner les codes-barres des produits."
         }
-      ]
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Le micro sert à dicter les numéros de téléphone.",
+          "speechRecognitionPermission": "La reconnaissance vocale sert à transformer votre voix en numéro de téléphone."
+        }
+      ],
+      "expo-image",
+      "expo-secure-store",
+      "expo-sharing",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -37,7 +37,7 @@ const slides = [
 
 export default function Onboarding() {
   const [current, setCurrent] = useState(0);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const insets = useSafeAreaInsets();
 
   const goNext = async () => {
@@ -90,7 +90,7 @@ export default function Onboarding() {
 
         <View style={styles.dots}>
           {slides.map((_, i) => (
-            <View key={i} style={[styles.dot, { backgroundColor: i === current ? "#FFD700" : "rgba(255,255,255,0.4)" }]} />
+            <View key={i} style={[styles.dot, { backgroundColor: i === current ? "#FFFFFF" : "rgba(255,255,255,0.3)", width: i === current ? 20 : 8 }]} />
           ))}
         </View>
 
@@ -123,12 +123,12 @@ const styles = StyleSheet.create({
   textArea: { gap: 12 },
   title: { color: "#FFFFFF", fontSize: 24, fontFamily: "Poppins_700Bold", lineHeight: 34 },
   desc: { color: "rgba(255,255,255,0.85)", fontSize: 14, fontFamily: "Poppins_400Regular", lineHeight: 22 },
-  dots: { flexDirection: "row", gap: 8 },
-  dot: { width: 8, height: 8, borderRadius: 4 },
+  dots: { flexDirection: "row", gap: 8, alignItems: "center" },
+  dot: { height: 8, borderRadius: 4 },
   buttons: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   skip: { color: "rgba(255,255,255,0.7)", fontSize: 13, fontFamily: "Poppins_400Regular" },
   nextBtn: {
-    backgroundColor: "#FFD700",
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 28,
     paddingVertical: 12,
     borderRadius: 12,
