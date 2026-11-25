@@ -61,6 +61,13 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, fontError]);
 
+  // Réveille silencieusement le serveur Render dès l'ouverture de l'app
+  useEffect(() => {
+    if (apiHost) {
+      fetch(apiHost).catch(() => {});
+    }
+  }, []);
+
   if (!fontsLoaded && !fontError) return null;
 
   return (
