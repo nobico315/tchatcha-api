@@ -1,9 +1,9 @@
-import { Plus, Users, X, ArrowUpCircle, ArrowDownCircle, TrendingUp, CheckCircle, Package, FileText, Share2, Copy } from "lucide-react-native";
+import { Plus, Search, Users, X, ArrowUpCircle, ArrowDownCircle, TrendingUp, CheckCircle, Package, FileText, Share2, Copy } from "lucide-react-native";
 import { router } from "expo-router";
 import React, { useEffect, useState, useMemo } from "react";
 import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, RefreshControl, ScrollView,
-  StyleSheet, Text, TextInput, TouchableOpacity, View, FlatList
+  Share, StyleSheet, Text, TextInput, TouchableOpacity, View, FlatList
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Print from "expo-print";
@@ -21,9 +21,11 @@ export default function Equipe() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, getMyAgents, addAgentByManager, attachAgentByManager, getManagerInviteCode } = useAuth();
-  const { transactions, getBalance } = useTransactions();
+  const { transactions, getBalance, getSessionBalances, getTodaySession } = useTransactions();
 
   const [agents, setAgents] = useState<User[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [agentFilter, setAgentFilter] = useState<"all" | "open" | "low" | "inactive">("all");
   const [refreshing, setRefreshing] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -64,6 +66,29 @@ export default function Equipe() {
   const totalTxToday = transactions.filter(
     (t) => agents.some((a) => a.id === t.agentId) && t.createdAt.startsWith(todayStr)
   ).length;
+
+  const filteredAgents = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return agents.filter((a) => {
+      const matchesQuery =
+        !q ||
+        `${a.firstName} ${a.lastName}`.toLowerCase().includes(q) ||
+        a.phone.includes(q);
+      if (!matchesQuery) return false;
+
+      if (agentFilter === "all") return true;
+      const sess = getTodaySession(a.id);
+      const sb = getSessionBalances(a.id);
+      const hasTx = transactions.some((t) => t.agentId === a.id && t.createdAt.startsWith(todayStr));
+      if (agentFilter === "open") return !!sess?.isOpen;
+      if (agentFilter === "low") {
+        if (!sess?.isOpen) return false;
+        return Math.min(sb.MTN, sb.Moov, sb.Celtis) <= 10_000 || sb.cash <= 20_000;
+      }
+      if (agentFilter === "inactive") return !sess?.isOpen && !hasTx;
+      return true;
+    });
+  }, [agents, searchQuery, agentFilter, getTodaySession, getSessionBalances, transactions, todayStr]);
 
   const resetForm = () => {
     setFirstName(""); setLastName(""); setPhone(""); setPin(""); setPinConfirm("");
@@ -277,39 +302,93 @@ export default function Equipe() {
 
               <TouchableOpacity
                 style={styles.shareBtn}
-                onPress={() => {
-                  Sharing.shareAsync("", {
-                    dialogTitle: "Partager mon code Tcha-Tcha",
-                  }).catch(() => {
-                    Alert.alert("Code copié", `Votre code : ${inviteCodeData.code}\n\n${inviteCodeData.shareMessage}`);
-                  });
+                onPress={async () => {
+                  try {
+                    await Share.share({
+                      title: "Rejoindre mon réseau Tcha-Tcha",
+                      message: inviteCodeData.shareMessage,
+                    });
+                  } catch {
+                    Alert.alert("Code d'invitation", `${inviteCodeData.code}\n\n${inviteCodeData.shareMessage}`);
+                  }
                 }}
                 activeOpacity={0.8}
               >
                 <Share2 size={16} color="#FFFFFF" />
-                <Text style={styles.shareBtnText}>Partager le code sur WhatsApp</Text>
+                <Text style={styles.shareBtnText}>Partager le code d'invitation</Text>
               </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Recherche & Filtres réseau */}
+          {agents.length > 0 && (
+            <View style={{ gap: 10 }}>
+              <View style={[styles.searchBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Search size={16} color={colors.muted} />
+                <TextInput
+                  style={[styles.searchInput, { color: colors.text }]}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder="Rechercher un agent ou numéro..."
+                  placeholderTextColor={colors.muted}
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => setSearchQuery("")}>
+                    <X size={15} color={colors.muted} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {[
+                  { key: "all" as const, label: `Tous (${agents.length})` },
+                  { key: "open" as const, label: "Journée ouverte" },
+                  { key: "low" as const, label: "Solde bas" },
+                  { key: "inactive" as const, label: "Inactifs" },
+                ].map((f) => {
+                  const active = agentFilter === f.key;
+                  return (
+                    <TouchableOpacity
+                      key={f.key}
+                      onPress={() => setAgentFilter(f.key)}
+                      style={[
+                        styles.filterChip,
+                        active && { backgroundColor: colors.primary, borderColor: colors.primary },
+                      ]}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={[styles.filterChipText, active && { color: "#FFFFFF" }]}>
+                        {f.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             </View>
           )}
 
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.primary }]}>
-              Agents de votre réseau ({agents.length})
+              Agents de votre réseau ({filteredAgents.length})
             </Text>
           </View>
 
-          {agents.length === 0 ? (
+          {filteredAgents.length === 0 ? (
             <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={[styles.emptyIconCircle, { backgroundColor: "rgba(25,25,112,0.06)" }]}>
                 <Users size={32} color={colors.primary} />
               </View>
-              <Text style={[styles.emptyTitle, { color: colors.text }]}>Aucun agent rattaché</Text>
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                {agents.length === 0 ? "Aucun agent rattaché" : "Aucun agent trouvé"}
+              </Text>
               <Text style={[styles.emptyText, { color: colors.muted }]}>
-                Appuyez sur « Ajouter » pour créer ou rattacher votre premier agent.
+                {agents.length === 0
+                  ? "Appuyez sur « Ajouter » pour créer ou rattacher votre premier agent."
+                  : "Essayez un autre filtre ou terme de recherche."}
               </Text>
             </View>
           ) : (
-            agents.map((a) => (
+            filteredAgents.map((a) => (
               <AgentCard
                 key={a.id}
                 agent={a}
@@ -695,4 +774,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: "Poppins_600SemiBold",
   },
+  searchBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    height: 46,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+  },
+  searchInput: { flex: 1, fontSize: 13, fontFamily: "Poppins_400Regular" },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    backgroundColor: "#FFFFFF",
+  },
+  filterChipText: { fontSize: 12, fontFamily: "Poppins_600SemiBold", color: "#475569" },
 });

@@ -1,7 +1,8 @@
-import { Check, ChevronDown, Globe2, X, Mic, MicOff, MessageSquareText } from "lucide-react-native";
+import { Check, CheckCircle2, ChevronDown, Clock, Globe2, X, Mic, MicOff, MessageSquareText } from "lucide-react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Keyboard,
   KeyboardAvoidingView,
@@ -457,37 +458,53 @@ export default function NewTransaction() {
           </View>
         </View>
 
-        {/* Payé / Non payé */}
-        <View style={styles.payStatusRow}>
-          <TouchableOpacity
-            style={[styles.payStatusBtn, paid ? styles.payStatusBtnPaidActive : styles.payStatusBtnPaidInactive]}
-            onPress={() => setPaid(true)}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.payStatusText, paid ? styles.payStatusTextPaidActive : styles.payStatusTextPaidInactive]}>
-              PAYÉ
-            </Text>
-          </TouchableOpacity>
+        {/* Statut de paiement (Segmented control pleine largeur) */}
+        <View style={styles.paySection}>
+          <Text style={styles.fieldLabel}>STATUT DU PAIEMENT</Text>
+          <View style={styles.paySegmentWrap}>
+            <TouchableOpacity
+              style={[styles.paySegmentBtn, paid && styles.paySegmentPaidActive]}
+              onPress={() => {
+                setPaid(true);
+                void Haptics.selectionAsync();
+              }}
+              activeOpacity={0.85}
+            >
+              <CheckCircle2 size={17} color={paid ? "#FFFFFF" : "#15803D"} />
+              <Text style={[styles.paySegmentText, paid ? styles.paySegmentTextActive : { color: "#15803D" }]}>
+                Payé
+              </Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.payStatusBtn, !paid ? styles.payStatusBtnUnpaidActive : styles.payStatusBtnUnpaidInactive]}
-            onPress={() => setPaid(false)}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.payStatusText, !paid ? styles.payStatusTextUnpaidActive : styles.payStatusTextUnpaidInactive]}>
-              NON PAYÉ
-            </Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.paySegmentBtn, !paid && styles.paySegmentUnpaidActive]}
+              onPress={() => {
+                setPaid(false);
+                void Haptics.selectionAsync();
+              }}
+              activeOpacity={0.85}
+            >
+              <Clock size={17} color={!paid ? "#FFFFFF" : "#DC2626"} />
+              <Text style={[styles.paySegmentText, !paid ? styles.paySegmentTextActive : { color: "#DC2626" }]}>
+                Non payé
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Bouton principal */}
         <TouchableOpacity
-          style={[styles.submitBtn, loading && { opacity: 0.7 }]}
+          style={[styles.submitBtn, loading && { opacity: 0.75 }]}
           onPress={handleSubmit}
           disabled={loading}
           activeOpacity={0.85}
         >
-          <Text style={styles.submitBtnText}>{loading ? "Enregistrement..." : "Enregistrer"}</Text>
+          {loading ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Check size={19} color="#FFFFFF" strokeWidth={2.6} />
+          )}
+          <Text style={styles.submitBtnText}>{loading ? "Enregistrement..." : "Enregistrer l'opération"}</Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -629,34 +646,61 @@ const styles = StyleSheet.create({
   },
   nameInput: { fontSize: 15, fontFamily: "Poppins_500Medium", color: "#000000", height: "100%" },
 
-  payStatusRow: {
+  paySection: {
+    marginTop: 18,
+    marginBottom: 14,
+  },
+  paySegmentWrap: {
+    flexDirection: "row",
+    backgroundColor: "#F1F5F9",
+    borderRadius: 16,
+    padding: 4,
+    gap: 6,
+  },
+  paySegmentBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 16,
-    marginTop: 26,
-    marginBottom: 26,
+    gap: 8,
   },
-  payStatusBtn: { borderRadius: 12, paddingVertical: 10, paddingHorizontal: 28, alignItems: "center", justifyContent: "center" },
-  payStatusBtnPaidActive: { backgroundColor: "#00C569", borderWidth: 1.5, borderColor: "#00C569" },
-  payStatusBtnPaidInactive: { backgroundColor: "#FFFFFF", borderWidth: 1.5, borderColor: "#00C569" },
-  payStatusText: { fontSize: 14, fontFamily: "Poppins_700Bold" },
-  payStatusTextPaidActive: { color: "#FFFFFF" },
-  payStatusTextPaidInactive: { color: "#00C569" },
-  payStatusBtnUnpaidActive: { backgroundColor: "#FF3B30", borderWidth: 1.5, borderColor: "#FF3B30" },
-  payStatusBtnUnpaidInactive: { backgroundColor: "#FFFFFF", borderWidth: 1.5, borderColor: "#FF3B30" },
-  payStatusTextUnpaidActive: { color: "#FFFFFF" },
-  payStatusTextUnpaidInactive: { color: "#000000" },
+  paySegmentPaidActive: {
+    backgroundColor: "#16A34A",
+    shadowColor: "#16A34A",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  paySegmentUnpaidActive: {
+    backgroundColor: "#DC2626",
+    shadowColor: "#DC2626",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  paySegmentText: { fontSize: 14, fontFamily: "Poppins_700Bold" },
+  paySegmentTextActive: { color: "#FFFFFF" },
 
   submitBtn: {
     height: 56,
-    backgroundColor: "#191979",
-    borderRadius: 14,
+    backgroundColor: "#191970",
+    borderRadius: 16,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 10,
+    gap: 8,
+    marginTop: 6,
+    shadowColor: "#191970",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  submitBtnText: { color: "#FFFFFF", fontSize: 16, fontFamily: "Poppins_700Bold" },
+  submitBtnText: { color: "#FFFFFF", fontSize: 15, fontFamily: "Poppins_700Bold" },
 
   successToast: {
     backgroundColor: "#191979",

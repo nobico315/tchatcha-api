@@ -12,7 +12,10 @@ import {
   ChevronRight,
   TrendingUp,
   UserCheck,
+  Users,
+  AlertTriangle,
 } from "lucide-react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { 
@@ -145,10 +148,78 @@ export default function Dashboard() {
     }, 0);
   }, [agentTxToday, commSettings]);
 
+  const managerSummary = useMemo(() => {
+    if (!isGerant) return null;
+    const todayStr = new Date().toISOString().split("T")[0];
+    let totalCash = 0;
+    let totalMtn = 0;
+    let totalMoov = 0;
+    let totalCeltis = 0;
+    let activeAgentsCount = 0;
+    let lowBalanceAgentsCount = 0;
+
+    const agentRows = myAgents.map((a) => {
+      const sb = getSessionBalances(a.id);
+      const sess = getTodaySession(a.id);
+      const aTxToday = transactions.filter(
+        (t) => t.agentId === a.id && t.createdAt.startsWith(todayStr)
+      );
+      const volumeToday = aTxToday.reduce((s, t) => s + t.amount, 0);
+
+      totalCash += sb.cash;
+      totalMtn += sb.MTN;
+      totalMoov += sb.Moov;
+      totalCeltis += sb.Celtis;
+
+      const isActive = !!(sess?.isOpen || aTxToday.length > 0);
+      if (isActive) activeAgentsCount += 1;
+
+      const minSim = Math.min(sb.MTN, sb.Moov, sb.Celtis);
+      const hasOpening = !!(sess && sess.isOpen);
+      const isCritical = hasOpening && (minSim <= 5000 || sb.cash <= 5000);
+      const isLow = hasOpening && !isCritical && (minSim <= 10000 || sb.cash <= 20000);
+      if (isCritical || isLow) lowBalanceAgentsCount += 1;
+
+      return {
+        agent: a,
+        balances: sb,
+        isOpen: !!sess?.isOpen,
+        isClosed: !!(sess && !sess.isOpen),
+        txCount: aTxToday.length,
+        volumeToday,
+        alertLevel: isCritical ? ("critical" as const) : isLow ? ("low" as const) : ("ok" as const),
+      };
+    });
+
+    const todayVolume = agentTxToday.reduce((s, t) => s + t.amount, 0);
+    const unpaidTxs = transactions.filter(
+      (t) => myAgents.some((a) => a.id === t.agentId) && t.paid === false
+    );
+    const unpaidTotal = unpaidTxs.reduce((s, t) => s + t.amount, 0);
+
+    return {
+      totalCash,
+      totalMtn,
+      totalMoov,
+      totalCeltis,
+      totalNetwork: totalCash + totalMtn + totalMoov + totalCeltis,
+      activeAgentsCount,
+      lowBalanceAgentsCount,
+      todayVolume,
+      unpaidCount: unpaidTxs.length,
+      unpaidTotal,
+      agentRows,
+    };
+  }, [isGerant, myAgents, transactions, agentTxToday, getSessionBalances, getTodaySession]);
+
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
       await refreshTransactions();
+      if (isGerant) {
+        const agents = await getMyAgents();
+        setMyAgents(agents);
+      }
       setRefreshed(new Date().toISOString());
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } finally {
@@ -161,17 +232,6 @@ export default function Dashboard() {
   const isDayOpen = !!(todaySession && todaySession.isOpen);
 
   const handleQuickAction = (targetType: string) => {
-    if (!isDayOpen && agentTxToday.length >= 1) {
-      Alert.alert(
-        "Ouverture de journée requise",
-        "Vous avez déjà enregistré une opération sans ouverture de caisse.\n\nPour continuer vos opérations, vous devez ouvrir votre journée et saisir votre fond de caisse.",
-        [
-          { text: "Annuler", style: "cancel" },
-          { text: "Ouvrir la journée", onPress: () => router.push("/ouvrir-journee") },
-        ]
-      );
-      return;
-    }
     router.push(`/new-transaction?type=${targetType}` as any);
   };
 
@@ -216,7 +276,9 @@ export default function Dashboard() {
         {/* ── 1. Header (White background, black & 8E9AB4) ── */}
         <View style={[styles.header, { paddingTop: topPad + 12 }]}>
           <View style={styles.headerLeft}>
-            <Text style={styles.greetingText}>Bonjour Agent {agentDisplayName}</Text>
+            <Text style={styles.greetingText}>
+              {isGerant ? `Bonjour Gérant ${agentDisplayName}` : `Bonjour Agent ${agentDisplayName}`}
+            </Text>
             <Text style={styles.dateText}>{today}</Text>
           </View>
 
@@ -256,128 +318,306 @@ export default function Dashboard() {
           </View>
         </View>
 
-        {/* ── 2. Banner "Ouvrir la journée" (Deep #191970) ── */}
-        <View style={styles.sectionPad}>
-          {!isDayOpen ? (
-            <View style={styles.dayBanner}>
-              <View style={styles.dayBannerLeft}>
-                <Text style={styles.dayBannerTitle}>
-                  {agentTxToday.length >= 1 ? "Ouverture requise" : "Ouvrir la journée"}
-                </Text>
-                <Text style={styles.dayBannerSub}>
-                  {agentTxToday.length >= 1
-                    ? "1 opération enregistrée • Saisissez votre fond"
-                    : "Saisissez votre fond de caisse"}
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                style={styles.dayBannerBtn}
-                onPress={() => router.push("/ouvrir-journee")}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.dayBannerBtnText}>
-                  {agentTxToday.length >= 1 ? "Ouvrir" : "Démarrer"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.dayBanner}>
-              <View style={styles.dayBannerLeft}>
-                <Text style={styles.dayBannerTitle}>Journée ouverte</Text>
-                <Text style={styles.dayBannerSub}>
-                  Fond : {formatAmount(todaySession?.openingTotal ?? todaySession?.openingBalance ?? 0)} FCFA
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                style={[styles.dayBannerBtn, { backgroundColor: "#FFFFFF" }]}
-                onPress={() => router.push("/fermer-journee")}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.dayBannerBtnText}>Clôturer</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-
-        {/* ── 3. Solde flottant total (Direct on white) ── */}
-        <View style={styles.floatingBalanceSection}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-            <Text style={styles.balanceLabel}>Solde flottant total</Text>
-            {/* Freemium counter pill */}
-            {!isGerant && (
-              <TouchableOpacity
-                onPress={() => router.push("/abonnement")}
-                activeOpacity={0.7}
-                style={[
-                  styles.quotaBadge,
-                  agentTxToday.length >= 50 && styles.quotaBadgeFull,
-                ]}
-              >
-                <Text style={[
-                  styles.quotaBadgeText,
-                  agentTxToday.length >= 50 && { color: "#EF4444" },
-                ]}>
-                  {agentTxToday.length}/50 tx aujourd'hui
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          <View style={styles.balanceContentRow}>
-            <View style={styles.balanceLeftCol}>
-              <Text style={styles.balanceAmountText}>{formatAmount(balance)}</Text>
-              <Text style={styles.balanceUpdateText}>Mis à jour à {lastUpdateTime}</Text>
-            </View>
-
-            <View style={styles.balanceRightCol}>
-              <Text style={styles.balanceCurrencyText}>FCFA</Text>
-              <TouchableOpacity onPress={() => setShowDetails(true)} activeOpacity={0.7}>
-                <Text style={styles.balanceDetailsBtnText}>Détails</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-
-        {/* ── 4. Actions rapides (Dépôt, Retrait, Crédit) ── */}
-        <View style={styles.actionsSection}>
-          <Text style={styles.sectionHeading}>Actions rapides</Text>
-
-          <View style={styles.quickActionsRow}>
-            {quickActions.map((act) => (
-              <TouchableOpacity
-                key={act.label}
-                style={styles.actionBtnWrap}
-                onPress={act.onPress}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.actionIconBox, { backgroundColor: act.bg }]}>
-                  {act.icon}
+        {isGerant && managerSummary ? (
+          <View style={styles.gerantBody}>
+            {/* Trésorerie consolidée du réseau */}
+            <LinearGradient colors={["#191970", "#0F172A"]} style={styles.networkCard}>
+              <View style={styles.networkTopRow}>
+                <View>
+                  <Text style={styles.networkLabel}>Trésorerie totale du réseau</Text>
+                  <Text style={styles.networkAmount}>
+                    {formatAmount(managerSummary.totalNetwork)} FCFA
+                  </Text>
                 </View>
-                <Text style={styles.actionLabel}>{act.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+                <TouchableOpacity
+                  onPress={() => router.push("/(tabs)/equipe")}
+                  style={styles.networkTeamPill}
+                  activeOpacity={0.8}
+                >
+                  <Users size={14} color="#FFFFFF" />
+                  <Text style={styles.networkTeamText}>{myAgents.length} agent(s)</Text>
+                </TouchableOpacity>
+              </View>
 
-        {/* ── 5. Transactions récentes ── */}
-        <View style={styles.recentSection}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionHeading}>Transactions récentes</Text>
-            <TouchableOpacity onPress={() => router.push("/transactions")} activeOpacity={0.7}>
-              <Text style={styles.seeAllText}>Voir tout</Text>
-            </TouchableOpacity>
-          </View>
+              <View style={styles.networkBreakdownRow}>
+                {[
+                  { label: "Espèces", val: managerSummary.totalCash, dot: "#22C55E" },
+                  { label: "MTN", val: managerSummary.totalMtn, dot: "#FACC15" },
+                  { label: "Moov", val: managerSummary.totalMoov, dot: "#38BDF8" },
+                  { label: "Celtis", val: managerSummary.totalCeltis, dot: "#34D399" },
+                ].map((item) => (
+                  <View key={item.label} style={styles.networkBreakCol}>
+                    <View style={styles.networkBreakLabelRow}>
+                      <View style={[styles.networkDot, { backgroundColor: item.dot }]} />
+                      <Text style={styles.networkBreakLabel}>{item.label}</Text>
+                    </View>
+                    <Text style={styles.networkBreakVal} numberOfLines={1}>
+                      {formatAmount(item.val)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </LinearGradient>
 
-          {recent.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Aucune transaction enregistrée aujourd'hui.</Text>
+            {/* 4 KPIs Réseau */}
+            <View style={styles.kpiGrid}>
+              <View style={styles.kpiCard}>
+                <Text style={styles.kpiLabel}>Points actifs</Text>
+                <Text style={styles.kpiValue}>
+                  {managerSummary.activeAgentsCount}/{myAgents.length}
+                </Text>
+                <Text style={styles.kpiSub}>Aujourd'hui</Text>
+              </View>
+
+              <View style={styles.kpiCard}>
+                <Text style={styles.kpiLabel}>Volume du jour</Text>
+                <Text style={styles.kpiValue}>{formatAmount(managerSummary.todayVolume)} F</Text>
+                <Text style={styles.kpiSub}>{agentTxToday.length} opération(s)</Text>
+              </View>
+
+              <View style={styles.kpiCard}>
+                <Text style={styles.kpiLabel}>Commissions est.</Text>
+                <Text style={[styles.kpiValue, { color: "#15803D" }]}>
+                  +{formatAmount(Math.round(todayCommission))} F
+                </Text>
+                <Text style={styles.kpiSub}>Équipe aujourd'hui</Text>
+              </View>
+
+              <View style={styles.kpiCard}>
+                <Text style={styles.kpiLabel}>Alertes & Impayés</Text>
+                <Text
+                  style={[
+                    styles.kpiValue,
+                    {
+                      color:
+                        managerSummary.lowBalanceAgentsCount > 0 || managerSummary.unpaidCount > 0
+                          ? "#DC2626"
+                          : "#0F172A",
+                    },
+                  ]}
+                >
+                  {managerSummary.lowBalanceAgentsCount} alerte(s)
+                </Text>
+                <Text style={styles.kpiSub}>
+                  {managerSummary.unpaidCount > 0
+                    ? `${formatAmount(managerSummary.unpaidTotal)} F impayés`
+                    : "Aucun impayé"}
+                </Text>
+              </View>
             </View>
-          ) : (
-            recent.map((tx) => <TransactionItem key={tx.id} item={tx} onPress={() => {}} commissionSettings={commSettings} />)
-          )}
-        </View>
+
+            {/* Santé des Points de Vente */}
+            <View style={styles.gerantSection}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionHeading}>Points de vente</Text>
+                <TouchableOpacity onPress={() => router.push("/(tabs)/equipe")} activeOpacity={0.7}>
+                  <Text style={styles.seeAllText}>Gérer l'équipe</Text>
+                </TouchableOpacity>
+              </View>
+
+              {managerSummary.agentRows.length === 0 ? (
+                <TouchableOpacity
+                  style={styles.emptyManagerCard}
+                  onPress={() => router.push("/(tabs)/equipe")}
+                  activeOpacity={0.8}
+                >
+                  <Users size={22} color="#191970" />
+                  <Text style={styles.emptyManagerTitle}>Ajoutez votre premier agent</Text>
+                  <Text style={styles.emptyManagerSub}>
+                    Créez ou rattachez des points de vente depuis l'onglet Équipe.
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.pdvList}>
+                  {managerSummary.agentRows.map((row) => {
+                    const statusBg =
+                      row.alertLevel === "critical"
+                        ? "#FEE2E2"
+                        : row.alertLevel === "low"
+                          ? "#FEF3C7"
+                          : row.isOpen
+                            ? "#DCFCE7"
+                            : "#F1F5F9";
+                    const statusText =
+                      row.alertLevel === "critical"
+                        ? "#B91C1C"
+                        : row.alertLevel === "low"
+                          ? "#B45309"
+                          : row.isOpen
+                            ? "#15803D"
+                            : "#64748B";
+                    const statusLabel =
+                      row.alertLevel === "critical"
+                        ? "Solde critique"
+                        : row.alertLevel === "low"
+                          ? "Solde bas"
+                          : row.isOpen
+                            ? "Ouvert"
+                            : row.isClosed
+                              ? "Clôturé"
+                              : "Inactif";
+
+                    return (
+                      <TouchableOpacity
+                        key={row.agent.id}
+                        style={styles.pdvCard}
+                        onPress={() => router.push("/(tabs)/equipe")}
+                        activeOpacity={0.75}
+                      >
+                        <View style={styles.pdvTop}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.pdvName}>
+                              {row.agent.firstName} {row.agent.lastName}
+                            </Text>
+                            <Text style={styles.pdvMeta}>
+                              {row.txCount} tx · Vol. {formatAmount(row.volumeToday)} F
+                            </Text>
+                          </View>
+                          <View style={[styles.pdvStatusPill, { backgroundColor: statusBg }]}>
+                            <Text style={[styles.pdvStatusText, { color: statusText }]}>
+                              {statusLabel}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.pdvBalances}>
+                          <Text style={styles.pdvBalItem}>Cash {formatAmount(row.balances.cash)}</Text>
+                          <Text style={styles.pdvBalItem}>MTN {formatAmount(row.balances.MTN)}</Text>
+                          <Text style={styles.pdvBalItem}>Moov {formatAmount(row.balances.Moov)}</Text>
+                          <Text style={styles.pdvBalItem}>Celtis {formatAmount(row.balances.Celtis)}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+
+            {/* Activité récente réseau */}
+            <View style={styles.recentSection}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionHeading}>Activité récente du réseau</Text>
+                <TouchableOpacity onPress={() => router.push("/(tabs)/rapport")} activeOpacity={0.7}>
+                  <Text style={styles.seeAllText}>Rapports</Text>
+                </TouchableOpacity>
+              </View>
+
+              {recent.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>Aucune opération réseau aujourd'hui.</Text>
+                </View>
+              ) : (
+                recent.map((tx) => (
+                  <TransactionItem
+                    key={tx.id}
+                    item={tx}
+                    onPress={() => {}}
+                    commissionSettings={commSettings}
+                  />
+                ))
+              )}
+            </View>
+          </View>
+        ) : (
+          <>
+            {/* ── 2. Banner "Ouvrir la journée" (Deep #191970) ── */}
+            <View style={styles.sectionPad}>
+              {!isDayOpen ? (
+                <View style={styles.dayBanner}>
+                  <View style={styles.dayBannerLeft}>
+                    <Text style={styles.dayBannerTitle}>Ouvrir la journée</Text>
+                    <Text style={styles.dayBannerSub}>Saisissez votre fond de caisse</Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.dayBannerBtn}
+                    onPress={() => router.push("/ouvrir-journee")}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.dayBannerBtnText}>Démarrer</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.dayBanner}>
+                  <View style={styles.dayBannerLeft}>
+                    <Text style={styles.dayBannerTitle}>Journée ouverte</Text>
+                    <Text style={styles.dayBannerSub}>
+                      Fond : {formatAmount(todaySession?.openingTotal ?? todaySession?.openingBalance ?? 0)} FCFA
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.dayBannerBtn, { backgroundColor: "#FFFFFF" }]}
+                    onPress={() => router.push("/fermer-journee")}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.dayBannerBtnText}>Clôturer</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+
+            {/* ── 3. Solde flottant total (Direct on white) ── */}
+            <View style={styles.floatingBalanceSection}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                <Text style={styles.balanceLabel}>Solde flottant total</Text>
+              </View>
+
+              <View style={styles.balanceContentRow}>
+                <View style={styles.balanceLeftCol}>
+                  <Text style={styles.balanceAmountText}>{formatAmount(balance)}</Text>
+                  <Text style={styles.balanceUpdateText}>Mis à jour à {lastUpdateTime}</Text>
+                </View>
+
+                <View style={styles.balanceRightCol}>
+                  <Text style={styles.balanceCurrencyText}>FCFA</Text>
+                  <TouchableOpacity onPress={() => setShowDetails(true)} activeOpacity={0.7}>
+                    <Text style={styles.balanceDetailsBtnText}>Détails</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+
+            {/* ── 4. Actions rapides (Dépôt, Retrait, Crédit) ── */}
+            <View style={styles.actionsSection}>
+              <Text style={styles.sectionHeading}>Actions rapides</Text>
+
+              <View style={styles.quickActionsRow}>
+                {quickActions.map((act) => (
+                  <TouchableOpacity
+                    key={act.label}
+                    style={styles.actionBtnWrap}
+                    onPress={act.onPress}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.actionIconBox, { backgroundColor: act.bg }]}>
+                      {act.icon}
+                    </View>
+                    <Text style={styles.actionLabel}>{act.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* ── 5. Transactions récentes ── */}
+            <View style={styles.recentSection}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionHeading}>Transactions récentes</Text>
+                <TouchableOpacity onPress={() => router.push("/transactions")} activeOpacity={0.7}>
+                  <Text style={styles.seeAllText}>Voir tout</Text>
+                </TouchableOpacity>
+              </View>
+
+              {recent.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>Aucune transaction enregistrée aujourd'hui.</Text>
+                </View>
+              ) : (
+                recent.map((tx) => <TransactionItem key={tx.id} item={tx} onPress={() => {}} commissionSettings={commSettings} />)
+              )}
+            </View>
+          </>
+        )}
       </ScrollView>
 
       {/* ── Modal Détails du Solde ── */}
@@ -807,4 +1047,95 @@ const styles = StyleSheet.create({
     fontFamily: "Poppins_600SemiBold",
     color: "#191970",
   },
+  gerantBody: { paddingHorizontal: 20, gap: 18, marginTop: 6 },
+  networkCard: {
+    borderRadius: 22,
+    padding: 18,
+    gap: 16,
+    shadowColor: "#191970",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  networkTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  networkLabel: { fontSize: 12, fontFamily: "Poppins_500Medium", color: "rgba(255,255,255,0.75)" },
+  networkAmount: { fontSize: 24, fontFamily: "Poppins_700Bold", color: "#FFFFFF", marginTop: 2 },
+  networkTeamPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  networkTeamText: { fontSize: 11, fontFamily: "Poppins_600SemiBold", color: "#FFFFFF" },
+  networkBreakdownRow: {
+    flexDirection: "row",
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.14)",
+    paddingTop: 12,
+  },
+  networkBreakCol: { flex: 1, gap: 3 },
+  networkBreakLabelRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+  networkDot: { width: 6, height: 6, borderRadius: 3 },
+  networkBreakLabel: { fontSize: 11, fontFamily: "Poppins_400Regular", color: "rgba(255,255,255,0.72)" },
+  networkBreakVal: { fontSize: 12, fontFamily: "Poppins_700Bold", color: "#FFFFFF" },
+
+  kpiGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  kpiCard: {
+    width: "48.3%",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 14,
+    gap: 3,
+  },
+  kpiLabel: { fontSize: 11, fontFamily: "Poppins_600SemiBold", color: "#64748B" },
+  kpiValue: { fontSize: 17, fontFamily: "Poppins_700Bold", color: "#0F172A" },
+  kpiSub: { fontSize: 11, fontFamily: "Poppins_400Regular", color: "#94A3B8" },
+
+  gerantSection: { gap: 10 },
+  emptyManagerCard: {
+    alignItems: "center",
+    padding: 24,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    backgroundColor: "#F8FAFC",
+    gap: 6,
+  },
+  emptyManagerTitle: { fontSize: 15, fontFamily: "Poppins_700Bold", color: "#0F172A" },
+  emptyManagerSub: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "#64748B", textAlign: "center" },
+
+  pdvList: { gap: 10 },
+  pdvCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    padding: 14,
+    gap: 10,
+  },
+  pdvTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  pdvName: { fontSize: 14, fontFamily: "Poppins_700Bold", color: "#0F172A" },
+  pdvMeta: { fontSize: 12, fontFamily: "Poppins_400Regular", color: "#64748B" },
+  pdvStatusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
+  pdvStatusText: { fontSize: 11, fontFamily: "Poppins_700Bold" },
+  pdvBalances: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+    paddingTop: 8,
+  },
+  pdvBalItem: { fontSize: 11, fontFamily: "Poppins_600SemiBold", color: "#475569" },
 });
